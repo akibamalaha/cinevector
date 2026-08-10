@@ -1964,11 +1964,11 @@ if _view == 2:
     st.markdown('<div class="cv-section-title">Index Lab</div>', unsafe_allow_html=True)
 
     index_info = {
-        "IndexFlatL2": ("EXACT", "Brute-force ground truth — scans every vector."),
-        "IndexIVFFlat": ("CLUSTERED", "Partitions vectors into clusters, searches nearby ones only."),
-        "IndexPQ": ("COMPRESSED", "Compresses vectors into compact codes for smaller memory."),
-        "IndexIVFPQ": ("HYBRID", "Combines clustering with compression."),
-        "IndexHNSWFlat": ("GRAPH", "Navigates a multi-layer proximity graph — no training needed."),
+        "IndexFlatL2": ("EXACT", "Brute-force exact search. Ground-truth baseline."),
+        "IndexIVFFlat": ("IVF", "Clusters vectors and searches selected nearby clusters."),
+        "IndexPQ": ("PQ", "Compresses vectors into compact codes."),
+        "IndexIVFPQ": ("IVF + PQ", "Combines clustering with product quantization."),
+        "IndexHNSWFlat": ("HNSW", "Graph-based approximate nearest-neighbor search."),
     }
 
     cols = st.columns(5)
@@ -1984,52 +1984,324 @@ if _view == 2:
 
     st.markdown('<div class="cv-divider"></div>', unsafe_allow_html=True)
     st.markdown('<div class="cv-section-tag">RETRIEVAL ARENA</div>', unsafe_allow_html=True)
-    st.markdown('<div class="cv-section-title">Compare All Five Indexes on One Query</div>', unsafe_allow_html=True)
+    st.markdown('<div class="cv-section-title">Compare Speed, Recall & Precision</div>', unsafe_allow_html=True)
 
-    arena_query = st.text_input("Query for the arena", value="Spider-Man fights Green Goblin")
-    run_arena = st.button("Run Arena", key="arena_btn")
+    st.caption(
+        "IndexFlatL2 is the exact-search ground truth. The other indexes are evaluated against it."
+    )
+
+    arena_query = st.text_input(
+        "Query for the arena",
+        value="Spider-Man fights Green Goblin",
+        key="arena_query_updated",
+    )
+
+    k = st.selectbox(
+        "Top-K results",
+        [3, 5, 10],
+        index=1,
+        key="arena_k_updated",
+    )
+
+    run_arena = st.button("🚀 Run Full Benchmark", key="arena_btn_updated")
 
     if run_arena and arena_query.strip():
         embedder = load_embedder()
-        qvec = embedder.encode([arena_query], convert_to_numpy=True, normalize_embeddings=True)
 
-        flat_ids = indexes["IndexFlatL2"].search(qvec, 5)[1][0]
-        ground_truth = set(flat_ids.tolist())
+        # Query → embedding
+        qvec = embedder.encode(
+            [arena_query],
+            convert_to_numpy=True,
+            normalize_embeddings=True,
+        ).astype("float32")
+
+        search_k = min(k, len(movies))
+
+        # ---------------------------------------------------------------
+        # EXACT SEARCH = GROUND TRUTH
+        # ---------------------------------------------------------------
+        flat_distances, flat_ids = indexes["IndexFlatL2"].search(qvec, search_k)
+        ground_truth_ids = flat_ids[0].tolist()
+        ground_truth = set(ground_truth_ids)
+        actual_k = len(ground_truth)
 
         rows = []
+        result_store = {}
+
+        # Multiple runs make tiny latency measurements more stable.
+        NUM_TIMING_RUNS = 10
+
         for name, idx in indexes.items():
-            start = time.time()
-            distances, ids = idx.search(qvec, 5)
-            latency_ms = (time.time() - start) * 1000
-            retrieved = set(ids[0].tolist())
-            recall = len(retrieved & ground_truth) / max(1, len(ground_truth))
-            rows.append({"Index": name, "Latency (ms)": round(latency_ms, 3), "Recall@5 vs Flat": round(recall * 100, 1)})
+            idx.search(qvec, search_k)  # warm-up
+
+            timings = []
+            distances = None
+            ids = None
+
+            for _ in range(NUM_TIMING_RUNS):
+                start = time.perf_counter()
+                distances, ids = idx.search(qvec, search_k)
+                elapsed_ms = (time.perf_counter() - start) * 1000.0
+                timings.append(elapsed_ms)
+
+            latency_ms = float(np.median(timings))
+
+            retrieved_ids = ids[0].tolist()
+            retrieved = set(retrieved_ids)
+            correct = len(retrieved.intersection(ground_truth))
+
+            # Recall = relevant items found / all ground-truth relevant items
+            recall = correct / actual_k if actual_k else 0.0
+
+            # Precision = relevant retrieved items / all retrieved items
+            precision = correct / search_k if search_k else 0.0
+
+            result_store[name] = {
+                "ids": retrieved_ids,
+                "distances": distances[0].tolist(),
+                "correct": correct,
+            }
+
+            rows.append({
+                "Index": name,
+                "Latency (ms)": round(latency_ms, 4),
+                "Recall@K (%)": round(recall * 100, 1),
+                "Precision@K (%)": round(precision * 100, 1),
+                "Correct / K": f"{correct}/{search_k}",
+            })
 
         arena_df = pd.DataFrame(rows)
 
-        cA, cB = st.columns(2)
-        with cA:
-            figA = px.bar(
-                arena_df, x="Index", y="Recall@5 vs Flat", title="Recall@5 (vs exact IndexFlatL2)",
-                color_discrete_sequence=[NETFLIX_RED],
-            )
-            figA.update_layout(plot_bgcolor=NETFLIX_BLACK, paper_bgcolor=NETFLIX_BLACK, font_color=NETFLIX_WHITE, title_font_size=14)
-            st.plotly_chart(figA, use_container_width=True)
-        with cB:
-            figB = px.bar(
-                arena_df, x="Index", y="Latency (ms)", title="Search Latency",
-                color_discrete_sequence=["#b3b3b3"],
-            )
-            figB.update_layout(plot_bgcolor=NETFLIX_BLACK, paper_bgcolor=NETFLIX_BLACK, font_color=NETFLIX_WHITE, title_font_size=14)
-            st.plotly_chart(figB, use_container_width=True)
-
-        st.dataframe(arena_df, use_container_width=True)
-        st.caption(
-            "With only 20 movies, latency differences are in the millisecond/microsecond range and "
-            "will vary run to run — this is a small-dataset teaching experiment, not a production benchmark."
+        # ---------------------------------------------------------------
+        # SPEEDUP VS EXACT BASELINE
+        # ---------------------------------------------------------------
+        exact_latency = float(
+            arena_df.loc[
+                arena_df["Index"] == "IndexFlatL2",
+                "Latency (ms)",
+            ].iloc[0]
         )
 
-# ─────────────────────────────────────────────────────────────────────────
+        arena_df["Speedup vs Flat (×)"] = arena_df["Latency (ms)"].apply(
+            lambda x: round(exact_latency / x, 2) if x > 0 else 0.0
+        )
+
+        # ---------------------------------------------------------------
+        # FULL RESULTS TABLE
+        # ---------------------------------------------------------------
+        st.markdown("### 📊 Full Benchmark Results")
+        st.dataframe(arena_df, use_container_width=True, hide_index=True)
+
+        # ---------------------------------------------------------------
+        # WINNERS
+        # ---------------------------------------------------------------
+        non_flat = arena_df[arena_df["Index"] != "IndexFlatL2"].copy()
+
+        if not non_flat.empty:
+            fastest = non_flat.loc[non_flat["Latency (ms)"].idxmin()]
+            best_recall = non_flat.loc[non_flat["Recall@K (%)"].idxmax()]
+            best_precision = non_flat.loc[non_flat["Precision@K (%)"].idxmax()]
+
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                st.metric(
+                    "⚡ Fastest Approx. Index",
+                    fastest["Index"],
+                    f"{fastest['Latency (ms)']} ms",
+                )
+            with c2:
+                st.metric(
+                    "🎯 Highest Recall",
+                    best_recall["Index"],
+                    f"{best_recall['Recall@K (%)']}%",
+                )
+            with c3:
+                st.metric(
+                    "✅ Highest Precision",
+                    best_precision["Index"],
+                    f"{best_precision['Precision@K (%)']}%",
+                )
+
+        # ---------------------------------------------------------------
+        # LATENCY CHART
+        # ---------------------------------------------------------------
+        st.markdown("### ⚡ Search Speed")
+        fig_speed = px.bar(
+            arena_df,
+            x="Index",
+            y="Latency (ms)",
+            title="Search Latency — Lower is Better",
+            text="Latency (ms)",
+            color_discrete_sequence=["#b3b3b3"],
+        )
+        fig_speed.update_traces(texttemplate="%{text}", textposition="outside")
+        fig_speed.update_layout(
+            plot_bgcolor=NETFLIX_BLACK,
+            paper_bgcolor=NETFLIX_BLACK,
+            font_color=NETFLIX_WHITE,
+            title_font_size=15,
+            yaxis_title="Latency (ms)",
+            xaxis_title="Index",
+        )
+        st.plotly_chart(fig_speed, use_container_width=True, config={"displayModeBar": False})
+
+        # ---------------------------------------------------------------
+        # RECALL CHART
+        # ---------------------------------------------------------------
+        st.markdown("### 🎯 Recall@K")
+        fig_recall = px.bar(
+            arena_df,
+            x="Index",
+            y="Recall@K (%)",
+            title="Recall@K vs Exact IndexFlatL2 — Higher is Better",
+            text="Recall@K (%)",
+            color_discrete_sequence=[NETFLIX_RED],
+        )
+        fig_recall.update_traces(texttemplate="%{text}%", textposition="outside")
+        fig_recall.update_layout(
+            plot_bgcolor=NETFLIX_BLACK,
+            paper_bgcolor=NETFLIX_BLACK,
+            font_color=NETFLIX_WHITE,
+            title_font_size=15,
+            yaxis_title="Recall (%)",
+            xaxis_title="Index",
+            yaxis=dict(range=[0, 105]),
+        )
+        st.plotly_chart(fig_recall, use_container_width=True, config={"displayModeBar": False})
+
+        # ---------------------------------------------------------------
+        # PRECISION CHART
+        # ---------------------------------------------------------------
+        st.markdown("### 🎯 Precision@K")
+        fig_precision = px.bar(
+            arena_df,
+            x="Index",
+            y="Precision@K (%)",
+            title="Precision@K — Higher is Better",
+            text="Precision@K (%)",
+            color_discrete_sequence=["#777777"],
+        )
+        fig_precision.update_traces(texttemplate="%{text}%", textposition="outside")
+        fig_precision.update_layout(
+            plot_bgcolor=NETFLIX_BLACK,
+            paper_bgcolor=NETFLIX_BLACK,
+            font_color=NETFLIX_WHITE,
+            title_font_size=15,
+            yaxis_title="Precision (%)",
+            xaxis_title="Index",
+            yaxis=dict(range=[0, 105]),
+        )
+        st.plotly_chart(fig_precision, use_container_width=True, config={"displayModeBar": False})
+
+        # ---------------------------------------------------------------
+        # SPEED VS RECALL TRADE-OFF
+        # ---------------------------------------------------------------
+        st.markdown("### ⚖️ Speed vs Retrieval Quality")
+        fig_tradeoff = px.scatter(
+            arena_df,
+            x="Latency (ms)",
+            y="Recall@K (%)",
+            text="Index",
+            size="Recall@K (%)",
+            hover_data=["Precision@K (%)", "Speedup vs Flat (×)"],
+            title="Latency vs Recall — Low Latency + High Recall is Ideal",
+        )
+        fig_tradeoff.update_traces(textposition="top center")
+        fig_tradeoff.update_layout(
+            plot_bgcolor=NETFLIX_BLACK,
+            paper_bgcolor=NETFLIX_BLACK,
+            font_color=NETFLIX_WHITE,
+            title_font_size=15,
+            xaxis_title="Latency (ms) — Lower is Better",
+            yaxis_title="Recall@K (%) — Higher is Better",
+        )
+        st.plotly_chart(fig_tradeoff, use_container_width=True, config={"displayModeBar": False})
+
+        # ---------------------------------------------------------------
+        # SPEEDUP CHART
+        # ---------------------------------------------------------------
+        st.markdown("### 🚀 Speedup vs Exact Search")
+        fig_speedup = px.bar(
+            arena_df,
+            x="Index",
+            y="Speedup vs Flat (×)",
+            title="Speedup Compared with Exact IndexFlatL2",
+            text="Speedup vs Flat (×)",
+            color_discrete_sequence=[NETFLIX_RED],
+        )
+        fig_speedup.update_traces(texttemplate="%{text}×", textposition="outside")
+        fig_speedup.update_layout(
+            plot_bgcolor=NETFLIX_BLACK,
+            paper_bgcolor=NETFLIX_BLACK,
+            font_color=NETFLIX_WHITE,
+            title_font_size=15,
+            yaxis_title="Speedup (×)",
+            xaxis_title="Index",
+        )
+        st.plotly_chart(fig_speedup, use_container_width=True, config={"displayModeBar": False})
+
+        # ---------------------------------------------------------------
+        # GROUND TRUTH
+        # ---------------------------------------------------------------
+        st.markdown("### 📌 Exact Ground Truth")
+        st.info(
+            f"IndexFlatL2 searched all vectors and produced the exact Top-{search_k} "
+            "results used as ground truth."
+        )
+
+        for rank, movie_id in enumerate(ground_truth_ids, start=1):
+            if movie_id < len(movies):
+                movie_row = movies.iloc[movie_id]
+                st.write(
+                    f"**{rank}.** {movie_row['movie_title']} ({movie_row['year']})"
+                )
+
+        # ---------------------------------------------------------------
+        # RETRIEVED RESULTS FOR EACH INDEX
+        # ---------------------------------------------------------------
+        st.markdown("### 🔎 Retrieved Results by Index")
+
+        for name, result in result_store.items():
+            with st.expander(
+                f"{name} — {result['correct']}/{actual_k} ground-truth matches"
+            ):
+                for rank, movie_id in enumerate(result["ids"], start=1):
+                    if movie_id >= len(movies):
+                        continue
+
+                    movie_row = movies.iloc[movie_id]
+                    is_correct = movie_id in ground_truth
+                    status = "✅ Correct" if is_correct else "❌ Not in exact Top-K"
+
+                    st.write(
+                        f"**#{rank} — {movie_row['movie_title']} "
+                        f"({movie_row['year']})** → {status}"
+                    )
+
+        # ---------------------------------------------------------------
+        # EXPLANATION
+        # ---------------------------------------------------------------
+        st.markdown("### 🧠 How to Read the Results")
+        st.markdown(
+            """
+            **Latency:** lower = faster search.
+
+            **Recall@K:** how many of the exact Top-K results were recovered. Higher = better.
+
+            **Precision@K:** how many returned results matched the exact Top-K ground truth. Higher = better.
+
+            **Speedup vs Flat:** how many times faster the index is than exact IndexFlatL2.
+
+            **Speed vs Recall:** the ideal method is toward low latency + high recall.
+            """
+        )
+
+        st.warning(
+            "⚠️ Your current dataset is small. With only a small number of movies, "
+            "latency differences can be tiny and vary between runs. This is a "
+            "teaching/demo benchmark, not a production-scale benchmark."
+        )
+
 # TAB 4 — DATA STUDIO (SQL + Semantic + Hybrid)
 # ─────────────────────────────────────────────────────────────────────────
 
