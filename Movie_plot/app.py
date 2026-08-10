@@ -1348,64 +1348,6 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-with st.expander("Use official posters (optional)"):
-    st.caption(
-        "By default, cards show a real stock photo (no signup needed, but not movie-related) with a "
-        "generated title card as a safety net if it can't load. To show each movie's actual official "
-        "poster instead, add a free key from **either** service below (TMDB is tried first if both are set)."
-    )
-    oc1, oc2 = st.columns(2)
-    with oc1:
-        st.markdown("**OMDb** — easiest: just an email address")
-        st.caption("Free key at [omdbapi.com/apikey.aspx](https://www.omdbapi.com/apikey.aspx) — emailed to you, no address/billing form.")
-        st.text_input("OMDb API key", key="omdb_api_key", type="password", label_visibility="collapsed")
-    with oc2:
-        st.markdown("**TMDB** — larger catalog, more detail")
-        st.caption("Free key at [themoviedb.org/settings/api](https://www.themoviedb.org/settings/api) — requires filling out a short application form.")
-        st.text_input("TMDB API key", key="tmdb_api_key", type="password", label_visibility="collapsed")
-    st.caption(
-        "To make a key permanent (no retyping, works for every visitor), don't use the boxes above on a "
-        "deployed app — go to **share.streamlit.io → your app → ⋮ → Settings → Secrets** and paste:\n\n"
-        "```\nOMDB_API_KEY = \"your-actual-key-here\"\n```\n\n"
-        "then **Reboot app**. The boxes above are only for quick local testing."
-    )
-
-    st.markdown('<div class="cv-divider" style="margin:1rem 0;"></div>', unsafe_allow_html=True)
-    st.markdown("**Diagnose why posters aren't showing**")
-    diag_title = st.text_input("Test title", value="Iron Man", key="diag_title")
-    if st.button("Run diagnostic", key="diag_run"):
-        omdb_key = _omdb_key()
-        tmdb_key = _tmdb_key()
-        st.write(f"OMDb key detected: `{'yes — ' + omdb_key[:3] + '…' + omdb_key[-2:] if omdb_key else 'NO KEY FOUND'}`")
-        st.write(f"TMDB key detected: `{'yes — ' + tmdb_key[:3] + '…' + tmdb_key[-2:] if tmdb_key else 'NO KEY FOUND'}`")
-        if not omdb_key and not tmdb_key:
-            st.error(
-                "Neither key was found in session_state OR st.secrets. That means the secret either "
-                "isn't saved on Streamlit Cloud, is misspelled, or the app hasn't rebooted since you saved it."
-            )
-        if omdb_key:
-            try:
-                raw = requests.get(
-                    "https://www.omdbapi.com/",
-                    params={"apikey": omdb_key, "t": diag_title, "type": "movie"},
-                    timeout=6,
-                )
-                st.write(f"OMDb HTTP status: `{raw.status_code}`")
-                st.json(raw.json())
-            except Exception as e:
-                st.error(f"OMDb request raised an exception: {e}")
-        if tmdb_key:
-            try:
-                raw = requests.get(
-                    "https://api.themoviedb.org/3/search/movie",
-                    params={"api_key": tmdb_key, "query": diag_title},
-                    timeout=6,
-                )
-                st.write(f"TMDB HTTP status: `{raw.status_code}`")
-                st.json(raw.json())
-            except Exception as e:
-                st.error(f"TMDB request raised an exception: {e}")
-
 
 @st.dialog("Movie Details", width="large")
 def show_movie_modal(row):
@@ -2087,3 +2029,67 @@ if _view == 5:
             file_name="movies_export.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# POSTER SETUP (moved to the very bottom so the hero banner shows fully,
+# with no scrolling, the moment the page opens)
+# ─────────────────────────────────────────────────────────────────────────
+st.markdown('<div class="cv-divider" style="margin:2.5rem 0 1.5rem;"></div>', unsafe_allow_html=True)
+with st.expander("Use official posters (optional)"):
+    st.caption(
+        "By default, cards show a real stock photo (no signup needed, but not movie-related) with a "
+        "generated title card as a safety net if it can't load. To show each movie's actual official "
+        "poster instead, add a free key from **either** service below (TMDB is tried first if both are set)."
+    )
+    oc1, oc2 = st.columns(2)
+    with oc1:
+        st.markdown("**OMDb** — easiest: just an email address")
+        st.caption("Free key at [omdbapi.com/apikey.aspx](https://www.omdbapi.com/apikey.aspx) — emailed to you, no address/billing form.")
+        st.text_input("OMDb API key", key="omdb_api_key", type="password", label_visibility="collapsed")
+    with oc2:
+        st.markdown("**TMDB** — larger catalog, more detail")
+        st.caption("Free key at [themoviedb.org/settings/api](https://www.themoviedb.org/settings/api) — requires filling out a short application form.")
+        st.text_input("TMDB API key", key="tmdb_api_key", type="password", label_visibility="collapsed")
+    st.caption(
+        "To make a key permanent (no retyping, works for every visitor), don't use the boxes above on a "
+        "deployed app — go to **share.streamlit.io → your app → ⋮ → Settings → Secrets** and paste:\n\n"
+        "```\nOMDB_API_KEY = \"your-actual-key-here\"\n```\n\n"
+        "then **Reboot app**. The boxes above are only for quick local testing."
+    )
+
+    st.markdown('<div class="cv-divider" style="margin:1rem 0;"></div>', unsafe_allow_html=True)
+    st.markdown("**Diagnose why posters aren't showing**")
+    diag_title = st.text_input("Test title", value="Iron Man", key="diag_title")
+    if st.button("Run diagnostic", key="diag_run"):
+        omdb_key = _omdb_key()
+        tmdb_key = _tmdb_key()
+        st.write(f"OMDb key detected: `{'yes — ' + omdb_key[:3] + '…' + omdb_key[-2:] if omdb_key else 'NO KEY FOUND'}`")
+        st.write(f"TMDB key detected: `{'yes — ' + tmdb_key[:3] + '…' + tmdb_key[-2:] if tmdb_key else 'NO KEY FOUND'}`")
+        if not omdb_key and not tmdb_key:
+            st.error(
+                "Neither key was found in session_state OR st.secrets. That means the secret either "
+                "isn't saved on Streamlit Cloud, is misspelled, or the app hasn't rebooted since you saved it."
+            )
+        if omdb_key:
+            try:
+                raw = requests.get(
+                    "https://www.omdbapi.com/",
+                    params={"apikey": omdb_key, "t": diag_title, "type": "movie"},
+                    timeout=6,
+                )
+                st.write(f"OMDb HTTP status: `{raw.status_code}`")
+                st.json(raw.json())
+            except Exception as e:
+                st.error(f"OMDb request raised an exception: {e}")
+        if tmdb_key:
+            try:
+                raw = requests.get(
+                    "https://api.themoviedb.org/3/search/movie",
+                    params={"api_key": tmdb_key, "query": diag_title},
+                    timeout=6,
+                )
+                st.write(f"TMDB HTTP status: `{raw.status_code}`")
+                st.json(raw.json())
+            except Exception as e:
+                st.error(f"TMDB request raised an exception: {e}")
