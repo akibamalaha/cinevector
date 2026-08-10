@@ -569,13 +569,52 @@ def fetch_tmdb_poster_url(title, year, api_key):
     return None
 
 
+def _poster_seed(title, year):
+    """Deterministic seed so the same movie always gets the same stock photo."""
+    raw = f"{title}-{year}"
+    return re.sub(r"[^a-zA-Z0-9]+", "-", raw).strip("-").lower() or "movie"
+
+
+def get_real_photo_url(title, year, size=(300, 450)):
+    """A real, licensed-for-reuse photo with no API key or signup required
+    (Lorem Picsum, backed by Unsplash-sourced CC0 photography). Not an
+    actual movie poster — just a real photograph so the card doesn't look
+    like generated art — seeded per movie so it stays consistent."""
+    seed = _poster_seed(title, year)
+    w, h = size
+    return f"https://picsum.photos/seed/{seed}/{w}/{h}"
+
+
 def get_poster(title, year, genre):
+    """Primary image source, in priority order: TMDB real poster (if an API
+    key is set) → free no-signup stock photo → nothing (caller should use
+    get_poster_fallback for a guaranteed-available generated card)."""
     key = _tmdb_key()
     if key:
         url = fetch_tmdb_poster_url(title, year, key)
         if url:
             return url
+    return get_real_photo_url(title, year)
+
+
+def get_poster_fallback(title, year, genre):
+    """Guaranteed-available generated card, used as the onerror fallback in
+    case a real photo fails to load (e.g. no internet egress)."""
     return generate_placeholder_poster(title, year, genre)
+
+
+def poster_img_tag(title, year, genre, css_class="", style="", loading="lazy"):
+    """A single <img> tag that tries a real photo first and swaps itself to
+    the generated card if that photo fails to load — use this everywhere
+    instead of building <img src="..."> by hand."""
+    primary = get_poster(title, year, genre)
+    fallback = get_poster_fallback(title, year, genre)
+    class_attr = f' class="{css_class}"' if css_class else ""
+    style_attr = f' style="{style}"' if style else ""
+    return (
+        f'<img{class_attr}{style_attr} loading="{loading}" src="{primary}" '
+        f"onerror=\"this.onerror=null;this.src='{fallback}';\" />"
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -1029,11 +1068,12 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-with st.expander("Use real posters (optional)"):
+with st.expander("Use official posters (optional)"):
     st.caption(
-        "By default, posters/backdrops are generated locally — no real movie art, no copyright risk. "
-        "To show actual posters, get a free API key at themoviedb.org/settings/api and paste it here "
-        "(kept only for this session, never saved to disk)."
+        "By default, cards show a real stock photo (no signup needed) with a generated title card "
+        "as a safety net if it can't load — never actual movie poster art, so there's no copyright risk. "
+        "To show the real official poster for each movie instead, get a free API key at "
+        "themoviedb.org/settings/api and paste it here (kept only for this session, never saved to disk)."
     )
     st.text_input("TMDB API key", key="tmdb_api_key", type="password", label_visibility="collapsed")
 
@@ -1042,7 +1082,10 @@ with st.expander("Use real posters (optional)"):
 def show_movie_modal(row):
     c1, c2 = st.columns([1, 2])
     with c1:
-        st.image(get_poster(row["movie_title"], row["year"], row["genre"]), use_container_width=True)
+        st.markdown(
+            poster_img_tag(row["movie_title"], row["year"], row["genre"], style="width:100%;border-radius:6px;"),
+            unsafe_allow_html=True,
+        )
     with c2:
         st.markdown(f"### {row['movie_title']} ({row['year']})")
         st.caption(row.get("genre", ""))
@@ -1103,7 +1146,7 @@ if HAS_MOVIES:
     _carousel_items = "".join(
         f'''<div class="tile">
             <span class="badge">CV</span>
-            <img src="{get_poster(row['movie_title'], row['year'], row['genre'])}" />
+            {poster_img_tag(row['movie_title'], row['year'], row['genre'])}
             <div class="cap">{row['movie_title']}<br/><span>{row['year']}</span></div>
         </div>'''
         for _, row in movies.iterrows()
@@ -1235,11 +1278,11 @@ with tabs[0]:
     poster_cols = st.columns(6)
     for i, (_, row) in enumerate(movies.iterrows()):
         with poster_cols[i % 6]:
-            poster = get_poster(row['movie_title'], row['year'], row['genre'])
+            poster_tag = poster_img_tag(row['movie_title'], row['year'], row['genre'])
             st.markdown(f"""
             <div class="cv-poster-tile" style="width:100%; height:150px; margin-bottom:0.4rem;">
                 <span class="cv-poster-badge">CV</span>
-                <img src="{poster}" />
+                {poster_tag}
                 <div class="cv-poster-caption">{row['movie_title']}</div>
             </div>
             """, unsafe_allow_html=True)
@@ -1402,10 +1445,10 @@ with tabs[3]:
                 st.warning("Nothing in the dataset scored above the relevance threshold for this query.")
             else:
                 for _, row in docs.iterrows():
-                    poster = get_poster(row['movie_title'], row.get('year',''), row.get('genre',''))
+                    poster_tag = poster_img_tag(row['movie_title'], row.get('year',''), row.get('genre',''))
                     st.markdown(f"""
                     <div class="cv-row-card">
-                        <img src="{poster}" />
+                        {poster_tag}
                         <div>
                             <div class="cv-card-title">{row['movie_title']}</div>
                             <div class="cv-card-meta">{row.get('year','')} • {row.get('genre','')}</div>
@@ -1439,10 +1482,10 @@ with tabs[3]:
             else:
                 st.caption(f"SQL filtered candidates: {len(sql_matches)}  →  after semantic ranking: {len(sem_docs)}")
                 for _, row in sem_docs.head(5).iterrows():
-                    poster = get_poster(row['movie_title'], row.get('year',''), row.get('genre',''))
+                    poster_tag = poster_img_tag(row['movie_title'], row.get('year',''), row.get('genre',''))
                     st.markdown(f"""
                     <div class="cv-row-card">
-                        <img src="{poster}" />
+                        {poster_tag}
                         <div>
                             <div class="cv-card-title">{row['movie_title']}</div>
                             <div class="cv-card-meta">{row.get('year','')} • {row.get('genre','')}</div>
@@ -1491,10 +1534,10 @@ with tabs[4]:
                 for _, row in docs.iterrows():
                     score = row.get("combined_score", None)
                     score_txt = f"{score*100:.1f}%" if score is not None else "n/a"
-                    poster = get_poster(row['movie_title'], row.get('year',''), row.get('genre',''))
+                    poster_tag = poster_img_tag(row['movie_title'], row.get('year',''), row.get('genre',''))
                     st.markdown(f"""
                     <div class="cv-row-card">
-                        <img src="{poster}" />
+                        {poster_tag}
                         <div>
                             <div class="cv-card-title">{row['movie_title']} ({row.get('year','')})</div>
                             <div class="cv-card-meta">RELEVANCE {score_txt}</div>
