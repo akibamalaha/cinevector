@@ -219,45 +219,46 @@ html, body, [class*="css"] {{
     color: {NETFLIX_GRAY};
 }}
 
-.stTabs [data-baseweb="tab-list"] {{
-    gap: 0.6rem !important;
-    padding: 0.4rem 0 1.2rem 0 !important;
-    flex-wrap: wrap !important;
+/* ── Channel switcher (module navigation, one view at a time) ──────── */
+.cv-channel {{
+    text-align: center;
+    padding: 0.3rem 0 0.1rem 0;
 }}
-.stTabs [data-baseweb="tab-border"] {{
-    background: transparent !important;
-    height: 0 !important;
+.cv-channel-num {{
+    font-size: 0.68rem;
+    letter-spacing: 0.3em;
+    color: {NETFLIX_RED};
+    font-weight: 700;
 }}
-.stTabs [data-baseweb="tab-highlight"] {{
-    background: transparent !important;
-    height: 0 !important;
+.cv-channel-name {{
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 2.1rem;
+    letter-spacing: 0.05em;
+    color: {NETFLIX_WHITE};
+    line-height: 1.15;
+    text-shadow: 0 0 24px rgba(229,9,20,0.25);
 }}
-.stTabs button[data-baseweb="tab"] {{
-    font-family: 'Bebas Neue', sans-serif !important;
-    font-size: 0.92rem !important;
-    letter-spacing: 0.09em !important;
-    color: #7a7a7a !important;
+.cv-channel-desc {{
+    font-size: 0.78rem;
+    color: {NETFLIX_GRAY};
+    margin-top: -0.1rem;
+}}
+div[data-testid="column"]:has(button[kind="secondary"]) button {{
     background: {NETFLIX_DARK} !important;
     border: 1px solid #2a2a2a !important;
-    border-radius: 20px !important;
-    padding: 0.5rem 1.3rem 0.4rem 1.3rem !important;
-    margin: 0 !important;
-    overflow: hidden !important;
-    transition: all 0.15s ease !important;
-}}
-.stTabs button[data-baseweb="tab"] p {{
-    font-family: 'Bebas Neue', sans-serif !important;
-    letter-spacing: 0.09em !important;
-}}
-.stTabs button[data-baseweb="tab"]:hover {{
     color: {NETFLIX_WHITE} !important;
-    border-color: #4a4a4a !important;
+    font-size: 1.1rem !important;
+    border-radius: 50% !important;
+    aspect-ratio: 1 / 1 !important;
+    padding: 0 !important;
 }}
-.stTabs button[aria-selected="true"] {{
-    color: {NETFLIX_WHITE} !important;
-    background: linear-gradient(135deg, #7a0710, {NETFLIX_RED}) !important;
+div[data-testid="column"]:has(button[kind="secondary"]) button:hover {{
     border-color: {NETFLIX_RED} !important;
-    box-shadow: 0 0 18px rgba(229,9,20,0.45) !important;
+    color: {NETFLIX_RED} !important;
+}}
+div[data-baseweb="select"] {{
+    max-width: 320px;
+    margin: 0.6rem auto 0 auto;
 }}
 
 .stButton>button {{
@@ -1468,16 +1469,54 @@ if HAS_MOVIES:
         if st.button("ℹ️ More Info", key="carousel_more_info"):
             show_movie_modal(movies[movies["movie_title"] == pick_title].iloc[0])
 
-tabs = st.tabs([
-    "01 · EXPLORE", "02 · VECTOR OBSERVATORY", "03 · INDEX LAB",
-    "04 · DATA STUDIO", "05 · EVIDENCE ENGINE", "06 · MANAGE DATA",
-])
+_MODULE_META = [
+    ("EXPLORE", "The dataset, at a glance"),
+    ("VECTOR OBSERVATORY", "The embedding space, visualized"),
+    ("INDEX LAB", "FAISS index types, compared"),
+    ("DATA STUDIO", "SQL, semantic, and hybrid queries"),
+    ("EVIDENCE ENGINE", "Ask a question, get a grounded answer"),
+    ("MANAGE DATA", "Upload, edit, and export the catalog"),
+]
+
+if "cv_module_idx" not in st.session_state:
+    st.session_state.cv_module_idx = 0
+
+def _cv_go(delta):
+    st.session_state.cv_module_idx = (st.session_state.cv_module_idx + delta) % len(_MODULE_META)
+
+nav_l, nav_c, nav_r = st.columns([1, 6, 1])
+with nav_l:
+    st.button("◀", key="cv_prev", use_container_width=True, on_click=_cv_go, args=(-1,))
+with nav_c:
+    _idx = st.session_state.cv_module_idx
+    _name, _desc = _MODULE_META[_idx]
+    st.markdown(f"""
+    <div class="cv-channel">
+        <div class="cv-channel-num">{_idx+1:02d} / {len(_MODULE_META):02d}</div>
+        <div class="cv-channel-name">{_name}</div>
+        <div class="cv-channel-desc">{_desc}</div>
+    </div>
+    """, unsafe_allow_html=True)
+with nav_r:
+    st.button("▶", key="cv_next", use_container_width=True, on_click=_cv_go, args=(1,))
+
+_jump_labels = [f"{i+1:02d} · {m[0]}" for i, m in enumerate(_MODULE_META)]
+_jump = st.selectbox(
+    "Jump to a module", _jump_labels, index=st.session_state.cv_module_idx,
+    key="cv_jump", label_visibility="collapsed",
+)
+_jump_idx = _jump_labels.index(_jump)
+if _jump_idx != st.session_state.cv_module_idx:
+    st.session_state.cv_module_idx = _jump_idx
+    st.rerun()
+
+_view = st.session_state.cv_module_idx
 
 # ─────────────────────────────────────────────────────────────────────────
 # TAB 1 — EXPLORE
 # ─────────────────────────────────────────────────────────────────────────
 
-with tabs[0]:
+if _view == 0:
     st.markdown('<div class="cv-section-tag">DATASET</div>', unsafe_allow_html=True)
     st.markdown('<div class="cv-section-title">Explore the Collection</div>', unsafe_allow_html=True)
 
@@ -1583,7 +1622,7 @@ with tabs[0]:
 # TAB 2 — VECTOR OBSERVATORY
 # ─────────────────────────────────────────────────────────────────────────
 
-with tabs[1]:
+if _view == 1:
     st.markdown('<div class="cv-section-tag">EMBEDDING SPACE</div>', unsafe_allow_html=True)
     st.markdown('<div class="cv-section-title">Vector Observatory</div>', unsafe_allow_html=True)
 
@@ -1623,7 +1662,7 @@ with tabs[1]:
 # TAB 3 — INDEX LAB
 # ─────────────────────────────────────────────────────────────────────────
 
-with tabs[2]:
+if _view == 2:
     st.markdown('<div class="cv-section-tag">FAISS EXPERIMENTS</div>', unsafe_allow_html=True)
     st.markdown('<div class="cv-section-title">Index Lab</div>', unsafe_allow_html=True)
 
@@ -1697,7 +1736,7 @@ with tabs[2]:
 # TAB 4 — DATA STUDIO (SQL + Semantic + Hybrid)
 # ─────────────────────────────────────────────────────────────────────────
 
-with tabs[3]:
+if _view == 3:
     st.markdown('<div class="cv-section-tag">STRUCTURED + SEMANTIC</div>', unsafe_allow_html=True)
     st.markdown('<div class="cv-section-title">Data Studio</div>', unsafe_allow_html=True)
 
@@ -1783,7 +1822,7 @@ with tabs[3]:
 # TAB 5 — EVIDENCE ENGINE (RAG)
 # ─────────────────────────────────────────────────────────────────────────
 
-with tabs[4]:
+if _view == 4:
     st.markdown('<div class="cv-section-tag">RETRIEVAL-AUGMENTED GENERATION</div>', unsafe_allow_html=True)
     st.markdown('<div class="cv-section-title">Evidence Engine</div>', unsafe_allow_html=True)
 
@@ -1841,7 +1880,7 @@ with tabs[4]:
 # TAB 6 — MANAGE DATA (upload, inline add/edit/delete, export)
 # ─────────────────────────────────────────────────────────────────────────
 
-with tabs[5]:
+if _view == 5:
     st.markdown('<div class="cv-section-tag">DATASET CONTROL</div>', unsafe_allow_html=True)
     st.markdown('<div class="cv-section-title">Manage Data</div>', unsafe_allow_html=True)
     st.caption(
