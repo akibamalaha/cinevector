@@ -15,6 +15,7 @@ Streamlit Cloud at app.py.
 import os
 import re
 import time
+import random
 import sqlite3
 import string
 import warnings
@@ -30,6 +31,7 @@ import streamlit.components.v1 as components
 import plotly.express as px
 import plotly.graph_objects as go
 from PIL import Image, ImageDraw, ImageFont
+from streamlit_autorefresh import st_autorefresh
 
 warnings.filterwarnings("ignore")
 
@@ -66,7 +68,11 @@ html, body, [class*="css"] {{
 }}
 
 /* Hide default streamlit chrome */
-#MainMenu, footer, header {{visibility: hidden;}}
+#MainMenu, footer {{visibility: hidden;}}
+header {{display: none !important;}}
+[data-testid="stHeader"] {{display: none !important; height: 0 !important;}}
+.block-container {{padding-top: 1.2rem !important;}}
+.stApp > header {{display: none !important;}}
 
 /* ── Hero ───────────────────────────────────────────────────────── */
 .cv-hero {{
@@ -99,6 +105,24 @@ html, body, [class*="css"] {{
     max-width: 640px;
     margin-left: auto;
     margin-right: auto;
+}}
+
+/* ── Hero dot indicators (Netflix-style) ───────────────────────────── */
+.cv-hero-dots button {{
+    background: transparent !important;
+    border: none !important;
+    color: #666 !important;
+    font-size: 1.3rem !important;
+    padding: 0 !important;
+    min-height: 0 !important;
+    line-height: 1 !important;
+    box-shadow: none !important;
+}}
+.cv-hero-dots button:hover {{
+    color: #aaa !important;
+}}
+.cv-hero-dots .cv-dot-active button {{
+    color: {NETFLIX_RED} !important;
 }}
 
 /* ── Stat chips ─────────────────────────────────────────────────── */
@@ -1401,11 +1425,29 @@ def show_movie_modal(row):
         st.write(row.get("plot", ""))
 
 
+HERO_ROTATE_SECONDS = 6
+HERO_POOL_SIZE = min(6, len(movies)) if HAS_MOVIES else 0
+
 if HAS_MOVIES:
-    if "hero_movie_id" not in st.session_state:
-        st.session_state.hero_movie_id = movies.iloc[0]["movie_id"]
-    hero_row = movies[movies["movie_id"] == st.session_state.hero_movie_id]
-    hero_row = hero_row.iloc[0] if not hero_row.empty else movies.iloc[0]
+    hero_pool = movies.head(HERO_POOL_SIZE).reset_index(drop=True)
+
+    if "hero_index" not in st.session_state:
+        st.session_state.hero_index = 0
+    if "hero_autorefresh_seen" not in st.session_state:
+        st.session_state.hero_autorefresh_seen = -1
+
+    # Real setInterval-driven timer (via streamlit-autorefresh) that triggers
+    # a rerun every HERO_ROTATE_SECONDS. We only auto-advance the slide when
+    # this rerun was actually caused by the timer tick (count changed) — not
+    # when the user clicked "More Info", a dot, Shuffle, or anything else,
+    # so manual navigation never gets fought by the auto-rotation.
+    autorefresh_count = st_autorefresh(interval=HERO_ROTATE_SECONDS * 1000, key="hero_autorefresh")
+    if autorefresh_count != st.session_state.hero_autorefresh_seen:
+        st.session_state.hero_autorefresh_seen = autorefresh_count
+        if autorefresh_count > 0:
+            st.session_state.hero_index = (st.session_state.hero_index + 1) % HERO_POOL_SIZE
+
+    hero_row = hero_pool.iloc[st.session_state.hero_index]
 
     backdrop = get_backdrop(hero_row["movie_title"], hero_row["year"], hero_row["genre"])
     synopsis_preview = str(hero_row.get("plot", ""))
@@ -1435,10 +1477,24 @@ if HAS_MOVIES:
             show_movie_modal(hero_row)
     with hc2:
         if st.button("🔀 Shuffle Featured", key="hero_shuffle"):
-            candidates = movies[movies["movie_id"] != hero_row["movie_id"]]
-            pick = candidates.sample(1).iloc[0] if not candidates.empty else hero_row
-            st.session_state.hero_movie_id = pick["movie_id"]
+            other_indices = [i for i in range(HERO_POOL_SIZE) if i != st.session_state.hero_index]
+            st.session_state.hero_index = random.choice(other_indices) if other_indices else 0
             st.rerun()
+
+    # Dot indicators — click any dot to jump straight to that slide, exactly
+    # like a real Netflix/streaming-service hero carousel. The active slide's
+    # dot is a solid red circle; the rest are small hollow gray ones.
+    st.markdown('<div class="cv-hero-dots">', unsafe_allow_html=True)
+    _, dots_mid, _ = st.columns([2, 3, 2])
+    with dots_mid:
+        dot_cols = st.columns(HERO_POOL_SIZE)
+        for i, dcol in enumerate(dot_cols):
+            with dcol:
+                symbol = "🔴" if i == st.session_state.hero_index else "⚪"
+                if st.button(symbol, key=f"hero_dot_{i}"):
+                    st.session_state.hero_index = i
+                    st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
 
     # ─────────────────────────────────────────────────────────────────
     # REAL INTERACTIVE CAROUSEL — hover-reveal arrows, autoplay toggle,
