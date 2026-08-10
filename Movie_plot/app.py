@@ -758,6 +758,28 @@ def _poster_seed(title, year):
     return re.sub(r"[^a-zA-Z0-9]+", "-", raw).strip("-").lower() or "movie"
 
 
+# ── Local poster folder ─────────────────────────────────────────────────
+# Manual override: drop a PNG/JPG named "<slug>.png" into POSTERS_DIR
+# (slug = _poster_seed(title, year), e.g. "avatar-2009.png") and it will be
+# used instead of any online/generated source. This is checked first.
+POSTERS_DIR = os.path.join(os.path.dirname(__file__), "posters")
+
+
+@st.cache_data(show_spinner=False)
+def get_local_poster_data_uri(title, year):
+    """Return a base64 data-URI for a manually-provided poster file in
+    POSTERS_DIR, or None if no matching file exists."""
+    slug = _poster_seed(title, year)
+    for ext in (".png", ".jpg", ".jpeg", ".webp"):
+        path = os.path.join(POSTERS_DIR, slug + ext)
+        if os.path.isfile(path):
+            mime = "image/png" if ext == ".png" else ("image/webp" if ext == ".webp" else "image/jpeg")
+            with open(path, "rb") as f:
+                b64 = base64.b64encode(f.read()).decode()
+            return f"data:{mime};base64,{b64}"
+    return None
+
+
 def get_real_photo_url(title, year, size=(300, 450)):
     """A real, licensed-for-reuse photo with no API key or signup required
     (Lorem Picsum, backed by Unsplash-sourced CC0 photography). Not an
@@ -769,10 +791,13 @@ def get_real_photo_url(title, year, size=(300, 450)):
 
 
 def get_poster(title, year, genre):
-    """Primary image source, in priority order: TMDB real poster → OMDb real
-    poster (either, if a key is set) → free no-signup generic stock photo →
-    nothing (caller should use get_poster_fallback for a guaranteed-available
-    generated card)."""
+    """Primary image source, in priority order: manual file in posters/ →
+    TMDB real poster → OMDb real poster (either, if a key is set) → free
+    no-signup generic stock photo → nothing (caller should use
+    get_poster_fallback for a guaranteed-available generated card)."""
+    local = get_local_poster_data_uri(title, year)
+    if local:
+        return local
     tmdb = _tmdb_key()
     if tmdb:
         url = fetch_tmdb_poster_url(title, year, tmdb)
