@@ -437,22 +437,37 @@ input, textarea {{
     text-align: right;
 }}
 
-/* ── Word-count stat card ───────────────────────────────────────────── */
-.cv-wc-card {{
+/* ── Collection breakdown: one panel, leaderboard + inline stat rail ─ */
+.cv-breakdown-panel {{
+    display: flex;
+    align-items: stretch;
     background: {NETFLIX_DARK};
     border: 1px solid #2a2a2a;
-    border-radius: 6px;
-    padding: 1.1rem 1.2rem;
-    height: 100%;
+    border-radius: 4px;
+    overflow: hidden;
+}}
+.cv-breakdown-main {{
+    flex: 1 1 auto;
+    padding: 0.9rem 1.3rem;
+    min-width: 0;
+}}
+.cv-breakdown-rail {{
+    flex: 0 0 200px;
+    padding: 1.1rem 1.3rem;
+    border-left: 1px solid #2a2a2a;
+    background: repeating-linear-gradient(
+        135deg, rgba(229,9,20,0.03) 0px, rgba(229,9,20,0.03) 10px,
+        transparent 10px, transparent 20px
+    );
 }}
 .cv-wc-big {{
     font-family: 'Bebas Neue', sans-serif;
-    font-size: 2.6rem;
+    font-size: 2.4rem;
     color: {NETFLIX_WHITE};
     line-height: 1;
 }}
 .cv-wc-range {{
-    font-size: 0.72rem;
+    font-size: 0.68rem;
     letter-spacing: 0.1em;
     color: {NETFLIX_GRAY};
     text-transform: uppercase;
@@ -462,8 +477,8 @@ input, textarea {{
     display: flex;
     align-items: flex-end;
     gap: 3px;
-    height: 46px;
-    margin-top: 1rem;
+    height: 40px;
+    margin-top: 0.9rem;
 }}
 .cv-wc-bars div {{
     flex: 1 1 auto;
@@ -1483,41 +1498,40 @@ with tabs[0]:
 
     st.markdown("<div style='height:1.4rem'></div>", unsafe_allow_html=True)
 
-    c1, c2 = st.columns([3, 2])
-    with c1:
-        st.markdown('<div class="cv-mono-label">GENRE LEADERBOARD</div>', unsafe_allow_html=True)
-        genre_counts = movies["genre"].value_counts()
-        max_count = int(genre_counts.max())
-        rows_html = ""
-        for i, (genre, count) in enumerate(genre_counts.items(), start=1):
-            pct = (count / max_count) * 100
-            rows_html += f"""
-            <div class="cv-rank-row">
-                <div class="cv-rank-num">{i:02d}</div>
-                <div class="cv-rank-label">{genre}</div>
-                <div class="cv-rank-track"><div class="cv-rank-fill" style="width:{pct}%;"></div></div>
-                <div class="cv-rank-count">{count}</div>
-            </div>
-            """
-        st.markdown(f'<div class="cv-filmstrip" style="padding:0.8rem 1rem;">{rows_html}</div>', unsafe_allow_html=True)
-
-    with c2:
-        st.markdown('<div class="cv-mono-label">SYNOPSIS LENGTH</div>', unsafe_allow_html=True)
-        plot_lengths = movies["plot"].str.split().apply(len)
-        counts, edges = np.histogram(plot_lengths, bins=10)
-        max_c = max(counts.max(), 1)
-        bars_html = "".join(
-            f'<div style="height:{max(6, int(c / max_c * 100))}%;" title="{c} movie(s)"></div>'
-            for c in counts
-        )
-        st.markdown(f"""
-        <div class="cv-wc-card">
-            <div class="cv-wc-big">{int(plot_lengths.mean())}</div>
-            <div class="cv-wc-range">AVG WORDS PER SYNOPSIS</div>
-            <div class="cv-wc-bars">{bars_html}</div>
-            <div class="cv-wc-range" style="margin-top:0.4rem;">RANGE {plot_lengths.min()}–{plot_lengths.max()} WORDS</div>
+    st.markdown('<div class="cv-mono-label">COLLECTION BREAKDOWN</div>', unsafe_allow_html=True)
+    genre_counts = movies["genre"].value_counts()
+    max_count = int(genre_counts.max())
+    rows_html = ""
+    for i, (genre, count) in enumerate(genre_counts.items(), start=1):
+        pct = (count / max_count) * 100
+        rows_html += f"""
+        <div class="cv-rank-row">
+            <div class="cv-rank-num">{i:02d}</div>
+            <div class="cv-rank-label">{genre}</div>
+            <div class="cv-rank-track"><div class="cv-rank-fill" style="width:{pct}%;"></div></div>
+            <div class="cv-rank-count">{count}</div>
         </div>
-        """, unsafe_allow_html=True)
+        """
+
+    plot_lengths = movies["plot"].str.split().apply(len)
+    counts, edges = np.histogram(plot_lengths, bins=10)
+    max_c = max(counts.max(), 1)
+    bars_html = "".join(
+        f'<div style="height:{max(6, int(c / max_c * 100))}%;" title="{c} movie(s)"></div>'
+        for c in counts
+    )
+
+    st.markdown(f"""
+    <div class="cv-breakdown-panel">
+        <div class="cv-breakdown-main">{rows_html}</div>
+        <div class="cv-breakdown-rail">
+            <div class="cv-wc-big">{int(plot_lengths.mean())}</div>
+            <div class="cv-wc-range">AVG WORDS / SYNOPSIS</div>
+            <div class="cv-wc-bars">{bars_html}</div>
+            <div class="cv-wc-range" style="margin-top:0.4rem;">RANGE {plot_lengths.min()}–{plot_lengths.max()}</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
     st.markdown('<div class="cv-mono-label" style="margin-top:1.5rem;">BROWSE THE CATALOG</div>', unsafe_allow_html=True)
     poster_cols = st.columns(6)
