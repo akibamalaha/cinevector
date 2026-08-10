@@ -220,19 +220,34 @@ html, body, [class*="css"] {{
 }}
 
 .stTabs [data-baseweb="tab-list"] {{
-    gap: 1.5rem;
-    border-bottom: 1px solid #2a2a2a;
+    gap: 0.6rem;
+    border-bottom: none;
+    padding: 0.4rem 0 1.2rem 0;
+    flex-wrap: wrap;
 }}
 .stTabs [data-baseweb="tab"] {{
     font-family: 'Bebas Neue', sans-serif;
-    font-size: 1rem;
-    letter-spacing: 0.1em;
-    color: {NETFLIX_GRAY};
-    background: transparent;
+    font-size: 0.92rem;
+    letter-spacing: 0.09em;
+    color: #7a7a7a;
+    background: {NETFLIX_DARK};
+    border: 1px solid #2a2a2a;
+    border-radius: 20px;
+    padding: 0.5rem 1.3rem 0.4rem 1.3rem;
+    transition: all 0.15s ease;
+}}
+.stTabs [data-baseweb="tab"]:hover {{
+    color: {NETFLIX_WHITE};
+    border-color: #4a4a4a;
+}}
+.stTabs [data-baseweb="tab-highlight"] {{
+    background: transparent !important;
 }}
 .stTabs [aria-selected="true"] {{
     color: {NETFLIX_WHITE} !important;
-    border-bottom: 3px solid {NETFLIX_RED} !important;
+    background: linear-gradient(135deg, #7a0710, {NETFLIX_RED}) !important;
+    border-color: {NETFLIX_RED} !important;
+    box-shadow: 0 0 18px rgba(229,9,20,0.45);
 }}
 
 .stButton>button {{
@@ -1428,7 +1443,10 @@ if HAS_MOVIES:
         if st.button("ℹ️ More Info", key="carousel_more_info"):
             show_movie_modal(movies[movies["movie_title"] == pick_title].iloc[0])
 
-tabs = st.tabs(["EXPLORE", "VECTOR OBSERVATORY", "INDEX LAB", "DATA STUDIO", "EVIDENCE ENGINE", "MANAGE DATA"])
+tabs = st.tabs([
+    "01 · EXPLORE", "02 · VECTOR OBSERVATORY", "03 · INDEX LAB",
+    "04 · DATA STUDIO", "05 · EVIDENCE ENGINE", "06 · MANAGE DATA",
+])
 
 # ─────────────────────────────────────────────────────────────────────────
 # TAB 1 — EXPLORE
