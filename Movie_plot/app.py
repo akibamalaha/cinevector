@@ -863,7 +863,38 @@ def generate_backdrop(title, genre, size=(1280, 480)):
     return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
 
 
+@st.cache_data(show_spinner=False)
+def generate_backdrop_from_poster(poster_data_uri, genre, size=(1280, 480)):
+    """Turn a local poster (portrait, e.g. 260x383) into a wide hero
+    backdrop. Posters are much narrower than the 1280x480 hero box, so a
+    plain cover-crop would zoom in absurdly close; instead we stretch the
+    poster to fill the box and gaussian-blur it into a moody cinematic
+    color wash, then apply the same left-side dark fade used by
+    generate_backdrop() so hero text stays legible."""
+    from PIL import ImageFilter
+
+    header, b64data = poster_data_uri.split(",", 1)
+    src = Image.open(io.BytesIO(base64.b64decode(b64data))).convert("RGB")
+    w, h = size
+    img = src.resize((w, h)).filter(ImageFilter.GaussianBlur(radius=22))
+
+    overlay = Image.new("L", (w, h), 0)
+    odraw = ImageDraw.Draw(overlay)
+    for x in range(w):
+        alpha = max(0, 235 - int(235 * (x / (w * 0.65))))
+        odraw.line([(x, 0), (x, h)], fill=alpha)
+    black = Image.new("RGB", (w, h), (8, 8, 8))
+    img = Image.composite(black, img, overlay)
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+
+
 def get_backdrop(title, year, genre):
+    local = get_local_poster_data_uri(title, year)
+    if local:
+        return generate_backdrop_from_poster(local, genre)
     return generate_backdrop(title, genre)
 
 
