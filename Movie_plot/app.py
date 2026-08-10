@@ -1571,14 +1571,15 @@ if _view == 0:
     rows_html = ""
     for i, (genre, count) in enumerate(genre_counts.items()):
         pct = (count / max_count) * 100
-        rows_html += f"""
-        <div class="cv-rank-row">
-            <div class="cv-rank-num">{i+1:02d}</div>
-            <div class="cv-rank-label">{genre}</div>
-            <div class="cv-rank-track"><div class="cv-rank-fill" style="width:{pct}%; background:{genre_shades[i]};"></div></div>
-            <div class="cv-rank-count">{count}</div>
-        </div>
-        """
+        rows_html += (
+            f'<div class="cv-rank-row">'
+            f'<div class="cv-rank-num">{i+1:02d}</div>'
+            f'<div class="cv-rank-label">{genre}</div>'
+            f'<div class="cv-rank-track"><div class="cv-rank-fill" '
+            f'style="width:{pct}%; background:{genre_shades[i]};"></div></div>'
+            f'<div class="cv-rank-count">{count}</div>'
+            f'</div>'
+        )
 
     plot_lengths = movies["plot"].str.split().apply(len)
     counts, edges = np.histogram(plot_lengths, bins=10)
@@ -1588,17 +1589,19 @@ if _view == 0:
         for c in counts
     )
 
-    st.markdown(f"""
-    <div class="cv-breakdown-panel">
-        <div class="cv-breakdown-main">{rows_html}</div>
-        <div class="cv-breakdown-rail">
-            <div class="cv-wc-big">{int(plot_lengths.mean())}</div>
-            <div class="cv-wc-range">AVG WORDS / SYNOPSIS</div>
-            <div class="cv-wc-bars">{bars_html}</div>
-            <div class="cv-wc-range" style="margin-top:0.4rem;">RANGE {plot_lengths.min()}–{plot_lengths.max()}</div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    breakdown_html = (
+        f'<div class="cv-breakdown-panel">'
+        f'<div class="cv-breakdown-main">{rows_html}</div>'
+        f'<div class="cv-breakdown-rail">'
+        f'<div class="cv-wc-big">{int(plot_lengths.mean())}</div>'
+        f'<div class="cv-wc-range">AVG WORDS / SYNOPSIS</div>'
+        f'<div class="cv-wc-bars">{bars_html}</div>'
+        f'<div class="cv-wc-range" style="margin-top:0.4rem;">'
+        f'RANGE {plot_lengths.min()}–{plot_lengths.max()}</div>'
+        f'</div>'
+        f'</div>'
+    )
+    st.markdown(breakdown_html, unsafe_allow_html=True)
 
     st.markdown('<div class="cv-mono-label" style="margin-top:1.5rem;">BROWSE THE CATALOG</div>', unsafe_allow_html=True)
     poster_cols = st.columns(6)
