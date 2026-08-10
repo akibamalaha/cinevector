@@ -866,18 +866,29 @@ def generate_backdrop(title, genre, size=(1280, 480)):
 @st.cache_data(show_spinner=False)
 def generate_backdrop_from_poster(poster_data_uri, genre, size=(1280, 480)):
     """Turn a local poster (portrait, e.g. 260x383) into a wide hero
-    backdrop. Posters are much narrower than the 1280x480 hero box, so a
-    plain cover-crop would zoom in absurdly close; instead we stretch the
-    poster to fill the box and gaussian-blur it into a moody cinematic
-    color wash, then apply the same left-side dark fade used by
-    generate_backdrop() so hero text stays legible."""
-    from PIL import ImageFilter
+    backdrop, Netflix-style: a lightly-blurred, darkened stretch of the
+    poster fills the whole box as ambient color, and the *sharp* poster
+    is placed on the right side at full clarity so it's still recognizable
+    — with a dark left-side fade so hero text stays legible."""
+    from PIL import ImageFilter, ImageEnhance
 
     header, b64data = poster_data_uri.split(",", 1)
     src = Image.open(io.BytesIO(base64.b64decode(b64data))).convert("RGB")
     w, h = size
-    img = src.resize((w, h)).filter(ImageFilter.GaussianBlur(radius=22))
 
+    # ambient background: mild blur only (not a full wash), slightly dimmed
+    bg = src.resize((w, h)).filter(ImageFilter.GaussianBlur(radius=9))
+    bg = ImageEnhance.Brightness(bg).enhance(0.55)
+
+    # sharp poster, scaled to the hero's height, anchored to the right edge
+    poster_h = h
+    poster_w = int(src.width * (poster_h / src.height))
+    sharp = src.resize((poster_w, poster_h))
+    img = bg.copy()
+    img.paste(sharp, (w - poster_w, 0))
+
+    # left-to-right dark fade so text over the ambient side stays readable,
+    # blending smoothly into the sharp poster on the right
     overlay = Image.new("L", (w, h), 0)
     odraw = ImageDraw.Draw(overlay)
     for x in range(w):
