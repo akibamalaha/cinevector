@@ -231,6 +231,53 @@ header {{display: none !important;}}
     margin-bottom: 0.6rem;
 }}
 
+/* ── Live RAG evaluation panel ───────────────────────────────── */
+.cv-eval-panel {{
+    background: {NETFLIX_DARK};
+    border: 1px solid #2f2f2f;
+    border-radius: 8px;
+    padding: 1rem 1.1rem;
+    margin: 0.8rem 0 1rem 0;
+}}
+.cv-eval-title {{
+    font-family: 'Bebas Neue', sans-serif;
+    letter-spacing: 0.08em;
+    color: {NETFLIX_WHITE};
+    font-size: 1.15rem;
+    margin-bottom: 0.65rem;
+}}
+.cv-eval-grid {{
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.55rem;
+}}
+.cv-eval-metric {{
+    background: {NETFLIX_CARD};
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 0.65rem;
+}}
+.cv-eval-value {{
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1.35rem;
+    color: {NETFLIX_WHITE};
+}}
+.cv-eval-label {{
+    font-size: 0.62rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: {NETFLIX_GRAY};
+}}
+.cv-eval-note {{
+    color: #999;
+    font-size: 0.68rem;
+    margin-top: 0.7rem;
+    line-height: 1.4;
+}}
+@media (max-width: 800px) {{
+    .cv-eval-grid {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
+}}
+
 /* ── misc ───────────────────────────────────────────────────────── */
 .cv-divider {{
     border-top: 1px solid #2a2a2a;
@@ -1327,6 +1374,122 @@ def answer_movie_question(question):
     return response, docs
 
 
+
+# ─────────────────────────────────────────────────────────────────────────
+# REAL-TIME RAG ANSWER EVALUATION
+# ─────────────────────────────────────────────────────────────────────────
+
+def _clip01(value):
+    return float(np.clip(float(value), 0.0, 1.0))
+
+
+def _cosine_score(text_a, text_b):
+    if not str(text_a).strip() or not str(text_b).strip():
+        return 0.0
+    embedder = load_embedder()
+    vecs = embedder.encode(
+        [str(text_a), str(text_b)],
+        convert_to_numpy=True,
+        normalize_embeddings=True,
+    )
+    return _clip01(float(np.dot(vecs[0], vecs[1])))
+
+
+def evaluate_rag_response(question, answer, docs):
+    """Return lightweight, real-time RAG quality indicators.
+
+    These are model-based/heuristic indicators, not gold-label Accuracy/F1.
+    They are useful for live app monitoring when no human reference answer is
+    available for an arbitrary user question.
+    """
+    if docs.empty:
+        return {
+            "answer_relevance": 0.0,
+            "faithfulness": 0.0,
+            "context_relevance": 0.0,
+            "retrieval_confidence": 0.0,
+            "overall_score": 0.0,
+        }
+
+    qtype = detect_question_type(question)
+    context_docs = docs.head(1) if qtype in {"character", "character_list", "movie_identification"} else docs.head(2)
+    context = build_context(context_docs)
+
+    # 1) Does the generated answer semantically address the question?
+    answer_relevance = _cosine_score(question, answer)
+
+    # 2) Are the retrieved records semantically relevant to the question?
+    embedder = load_embedder()
+    q_vec = embedder.encode([question], convert_to_numpy=True, normalize_embeddings=True)[0]
+    doc_texts = [str(x) for x in context_docs["text"].tolist()]
+    doc_vecs = embedder.encode(doc_texts, convert_to_numpy=True, normalize_embeddings=True)
+    context_relevance = _clip01(np.mean(np.dot(doc_vecs, q_vec)))
+
+    # 3) Is each answer sentence supported by the retrieved context?
+    sentences = [x.strip() for x in re.split(r"(?<=[.!?])\s+", str(answer)) if x.strip()]
+    context_chunks = [x.strip() for x in re.split(r"\n+", context) if x.strip()]
+    if sentences and context_chunks:
+        sent_vecs = embedder.encode(sentences, convert_to_numpy=True, normalize_embeddings=True)
+        chunk_vecs = embedder.encode(context_chunks, convert_to_numpy=True, normalize_embeddings=True)
+        support_matrix = np.dot(sent_vecs, chunk_vecs.T)
+        best_support = np.max(support_matrix, axis=1)
+        faithfulness = _clip01(np.mean(best_support))
+    else:
+        faithfulness = 0.0
+
+    # 4) Existing retrieval score is surfaced as a confidence indicator.
+    if "combined_score" in context_docs.columns:
+        retrieval_confidence = _clip01(context_docs["combined_score"].astype(float).mean())
+    else:
+        retrieval_confidence = context_relevance
+
+    # Overall is a transparent dashboard score, not a formal benchmark metric.
+    overall = _clip01(np.mean([
+        answer_relevance,
+        faithfulness,
+        context_relevance,
+        retrieval_confidence,
+    ]))
+
+    return {
+        "answer_relevance": answer_relevance,
+        "faithfulness": faithfulness,
+        "context_relevance": context_relevance,
+        "retrieval_confidence": retrieval_confidence,
+        "overall_score": overall,
+    }
+
+
+def evaluate_rag_with_latency(question):
+    """Run the existing RAG pipeline and return live evaluation metrics."""
+    start = time.perf_counter()
+    answer, docs = answer_movie_question(question)
+    latency_ms = (time.perf_counter() - start) * 1000.0
+    metrics = evaluate_rag_response(question, answer, docs)
+    metrics["response_time_ms"] = latency_ms
+    return answer, docs, metrics
+
+
+def render_rag_evaluation(metrics):
+    """Render the live evaluation panel used below every generated answer."""
+    def pct(key):
+        return f"{metrics.get(key, 0.0) * 100:.1f}%"
+
+    st.markdown(f"""
+    <div class="cv-eval-panel">
+        <div class="cv-eval-title">REAL-TIME RAG EVALUATION</div>
+        <div class="cv-eval-grid">
+            <div class="cv-eval-metric"><div class="cv-eval-value">{pct('answer_relevance')}</div><div class="cv-eval-label">Answer Relevance</div></div>
+            <div class="cv-eval-metric"><div class="cv-eval-value">{pct('faithfulness')}</div><div class="cv-eval-label">Faithfulness</div></div>
+            <div class="cv-eval-metric"><div class="cv-eval-value">{pct('context_relevance')}</div><div class="cv-eval-label">Context Relevance</div></div>
+            <div class="cv-eval-metric"><div class="cv-eval-value">{pct('retrieval_confidence')}</div><div class="cv-eval-label">Retrieval Confidence</div></div>
+            <div class="cv-eval-metric"><div class="cv-eval-value">{pct('overall_score')}</div><div class="cv-eval-label">Overall RAG Score</div></div>
+            <div class="cv-eval-metric"><div class="cv-eval-value">{metrics.get('response_time_ms', 0.0):.0f} ms</div><div class="cv-eval-label">Response Time</div></div>
+        </div>
+        <div class="cv-eval-note">Live semantic/grounding indicators based on the current question, generated answer, and retrieved movie context. Overall RAG Score is a dashboard heuristic, not classification accuracy/F1 or a human gold-label benchmark.</div>
+    </div>
+    """, unsafe_allow_html=True)
+
 # ─────────────────────────────────────────────────────────────────────────
 # HERO BANNER — featured movie, backdrop image, real synopsis
 # ─────────────────────────────────────────────────────────────────────────
@@ -1904,11 +2067,20 @@ if _view == 4:
     ask = st.button("Ask")
 
     if ask and question.strip():
-        with st.spinner("Retrieving evidence and generating an answer..."):
+        start_time = time.perf_counter()
+        with st.spinner("Retrieving evidence, generating an answer, and evaluating it..."):
             answer, docs = answer_movie_question(question)
-        st.session_state.chat_history.insert(0, (question, answer, docs))
+        elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+        metrics = evaluate_rag_response(question, answer, docs)
+        metrics["response_time_ms"] = elapsed_ms
+        st.session_state.chat_history.insert(0, (question, answer, docs, metrics))
 
-    for q, a, docs in st.session_state.chat_history:
+    for item in st.session_state.chat_history:
+        if len(item) == 3:
+            q, a, docs = item
+            metrics = evaluate_rag_response(q, a, docs)
+        else:
+            q, a, docs, metrics = item
         st.markdown(f"""
         <div class="cv-card">
             <div class="cv-card-meta">QUESTION</div>
@@ -1922,6 +2094,8 @@ if _view == 4:
             <div class="cv-card-plot" style="font-size:0.95rem;color:{NETFLIX_WHITE};">{a}</div>
         </div>
         """, unsafe_allow_html=True)
+
+        render_rag_evaluation(metrics)
 
         if not docs.empty:
             with st.expander(f"GROUNDED IN {len(docs)} RETRIEVED RECORD(S) — view evidence"):
