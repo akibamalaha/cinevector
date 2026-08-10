@@ -1477,12 +1477,20 @@ _MODULE_META = [
     ("EVIDENCE ENGINE", "Ask a question, get a grounded answer"),
     ("MANAGE DATA", "Upload, edit, and export the catalog"),
 ]
+_jump_labels = [f"{i+1:02d} · {m[0]}" for i, m in enumerate(_MODULE_META)]
 
 if "cv_module_idx" not in st.session_state:
     st.session_state.cv_module_idx = 0
+if "cv_jump" not in st.session_state:
+    st.session_state.cv_jump = _jump_labels[0]
 
 def _cv_go(delta):
-    st.session_state.cv_module_idx = (st.session_state.cv_module_idx + delta) % len(_MODULE_META)
+    new_idx = (st.session_state.cv_module_idx + delta) % len(_MODULE_META)
+    st.session_state.cv_module_idx = new_idx
+    st.session_state.cv_jump = _jump_labels[new_idx]  # keep the dropdown in sync
+
+def _cv_jump_changed():
+    st.session_state.cv_module_idx = _jump_labels.index(st.session_state.cv_jump)
 
 nav_l, nav_c, nav_r = st.columns([1, 6, 1])
 with nav_l:
@@ -1500,15 +1508,10 @@ with nav_c:
 with nav_r:
     st.button("▶", key="cv_next", use_container_width=True, on_click=_cv_go, args=(1,))
 
-_jump_labels = [f"{i+1:02d} · {m[0]}" for i, m in enumerate(_MODULE_META)]
-_jump = st.selectbox(
-    "Jump to a module", _jump_labels, index=st.session_state.cv_module_idx,
-    key="cv_jump", label_visibility="collapsed",
+st.selectbox(
+    "Jump to a module", _jump_labels,
+    key="cv_jump", label_visibility="collapsed", on_change=_cv_jump_changed,
 )
-_jump_idx = _jump_labels.index(_jump)
-if _jump_idx != st.session_state.cv_module_idx:
-    st.session_state.cv_module_idx = _jump_idx
-    st.rerun()
 
 _view = st.session_state.cv_module_idx
 
