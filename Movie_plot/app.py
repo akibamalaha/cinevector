@@ -1376,8 +1376,48 @@ def answer_movie_question(question):
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────
 # REAL-TIME RAG ANSWER EVALUATION
 # ─────────────────────────────────────────────────────────────────────────
+
+# Human-written reference answers for a small, fixed benchmark set.
+# These are used only when the user's question exactly matches one of the
+# benchmark questions. Arbitrary live questions still use context-based
+# evaluation without pretending that a gold answer exists.
+GROUND_TRUTH_QA = {
+    "Which movie involves Spider-Man and Mysterio?":
+        "Spider-Man: Far From Home (2019), which features Peter Parker facing Quentin Beck, also known as Mysterio.",
+    "Which movie is about a boy who dreams of becoming a musician?":
+        "Coco (2017), about Miguel Rivera, a young boy who dreams of becoming a musician despite his family's ban on music.",
+    "Which movie focuses on leadership and Wakanda?":
+        "Black Panther (2018), which follows T'Challa as he leads Wakanda and faces questions of tradition, justice, and global responsibility.",
+    "Which movie involves time travel and sacrifice?":
+        "Avengers: Endgame (2019), which uses time travel to undo the Snap and centers on sacrifice, teamwork, hope, and redemption.",
+    "Which movie is about family, memory, and music?":
+        "Coco (2017), which explores family, memory, music, tradition, and identity through Miguel's journey into the Land of the Dead.",
+    "Which movie follows a father searching for his son?":
+        "Finding Nemo (2003), in which Marlin crosses the ocean searching for his son Nemo after Nemo is captured.",
+    "Which movie explores emotions and childhood?":
+        "Inside Out (2015), which explores Riley's emotions, memories, childhood, emotional growth, and adapting to a major change in her life.",
+    "Which movie involves magic, sisters, and an endless winter?":
+        "Frozen (2013), in which sisters Anna and Elsa are connected to Elsa's magical ice powers and an endless winter affecting their kingdom.",
+}
+
+
+def _normalize_question_for_match(text):
+    return re.sub(r"[^a-z0-9 ]+", "", normalize_text(str(text))).strip()
+
+
+GROUND_TRUTH_LOOKUP = {
+    _normalize_question_for_match(q): (q, a)
+    for q, a in GROUND_TRUTH_QA.items()
+}
+
+
+def get_ground_truth(question):
+    """Return the human-written reference answer when this is a benchmark question."""
+    return GROUND_TRUTH_LOOKUP.get(_normalize_question_for_match(question), (None, None))
+
 
 def _clip01(value):
     return float(np.clip(float(value), 0.0, 1.0))
@@ -1396,19 +1436,25 @@ def _cosine_score(text_a, text_b):
 
 
 def evaluate_rag_response(question, answer, docs):
-    """Return lightweight, real-time RAG quality indicators.
+    """Evaluate both sides of the RAG answer when possible.
 
-    These are model-based/heuristic indicators, not gold-label Accuracy/F1.
-    They are useful for live app monitoring when no human reference answer is
-    available for an arbitrary user question.
+    A fixed benchmark question may have a human-written reference answer.
+    For arbitrary live questions, no gold answer is invented; context-based
+    metrics remain available instead.
     """
+    gt_question, ground_truth = get_ground_truth(question)
+
     if docs.empty:
         return {
             "answer_relevance": 0.0,
             "faithfulness": 0.0,
             "context_relevance": 0.0,
             "retrieval_confidence": 0.0,
+            "ground_truth_available": ground_truth is not None,
+            "ground_truth_similarity": 0.0,
             "overall_score": 0.0,
+            "ground_truth": ground_truth,
+            "ground_truth_question": gt_question,
         }
 
     qtype = detect_question_type(question)
@@ -1418,32 +1464,36 @@ def evaluate_rag_response(question, answer, docs):
     # 1) Does the generated answer semantically address the question?
     answer_relevance = _cosine_score(question, answer)
 
-    # 2) Are the retrieved records semantically relevant to the question?
+    # 2) Are the retrieved records relevant to the question?
     embedder = load_embedder()
     q_vec = embedder.encode([question], convert_to_numpy=True, normalize_embeddings=True)[0]
     doc_texts = [str(x) for x in context_docs["text"].tolist()]
     doc_vecs = embedder.encode(doc_texts, convert_to_numpy=True, normalize_embeddings=True)
     context_relevance = _clip01(np.mean(np.dot(doc_vecs, q_vec)))
 
-    # 3) Is each answer sentence supported by the retrieved context?
+    # 3) Is each answer sentence supported by retrieved context?
     sentences = [x.strip() for x in re.split(r"(?<=[.!?])\s+", str(answer)) if x.strip()]
     context_chunks = [x.strip() for x in re.split(r"\n+", context) if x.strip()]
     if sentences and context_chunks:
         sent_vecs = embedder.encode(sentences, convert_to_numpy=True, normalize_embeddings=True)
         chunk_vecs = embedder.encode(context_chunks, convert_to_numpy=True, normalize_embeddings=True)
         support_matrix = np.dot(sent_vecs, chunk_vecs.T)
-        best_support = np.max(support_matrix, axis=1)
-        faithfulness = _clip01(np.mean(best_support))
+        faithfulness = _clip01(np.mean(np.max(support_matrix, axis=1)))
     else:
         faithfulness = 0.0
 
-    # 4) Existing retrieval score is surfaced as a confidence indicator.
     if "combined_score" in context_docs.columns:
         retrieval_confidence = _clip01(context_docs["combined_score"].astype(float).mean())
     else:
         retrieval_confidence = context_relevance
 
-    # Overall is a transparent dashboard score, not a formal benchmark metric.
+    # 4) Human-ground-truth comparison, available only for benchmark questions.
+    ground_truth_available = ground_truth is not None
+    ground_truth_similarity = _cosine_score(answer, ground_truth) if ground_truth_available else None
+
+    # Overall live RAG score always measures grounding/retrieval. When a
+    # human reference exists, a separate benchmark score is reported instead
+    # of silently mixing gold-label correctness into arbitrary live questions.
     overall = _clip01(np.mean([
         answer_relevance,
         faithfulness,
@@ -1456,12 +1506,15 @@ def evaluate_rag_response(question, answer, docs):
         "faithfulness": faithfulness,
         "context_relevance": context_relevance,
         "retrieval_confidence": retrieval_confidence,
+        "ground_truth_available": ground_truth_available,
+        "ground_truth_similarity": ground_truth_similarity,
         "overall_score": overall,
+        "ground_truth": ground_truth,
+        "ground_truth_question": gt_question,
     }
 
 
 def evaluate_rag_with_latency(question):
-    """Run the existing RAG pipeline and return live evaluation metrics."""
     start = time.perf_counter()
     answer, docs = answer_movie_question(question)
     latency_ms = (time.perf_counter() - start) * 1000.0
@@ -1471,9 +1524,18 @@ def evaluate_rag_with_latency(question):
 
 
 def render_rag_evaluation(metrics):
-    """Render the live evaluation panel used below every generated answer."""
     def pct(key):
-        return f"{metrics.get(key, 0.0) * 100:.1f}%"
+        value = metrics.get(key)
+        return "N/A" if value is None else f"{value * 100:.1f}%"
+
+    gt_available = metrics.get("ground_truth_available", False)
+    gt_value = pct("ground_truth_similarity") if gt_available else "N/A"
+    gt_note = (
+        "Human-written reference answer found for this benchmark question. "
+        "Ground Truth Similarity is a semantic correctness indicator, not a classification Accuracy/F1 score."
+        if gt_available else
+        "No human-written ground truth is registered for this arbitrary question; context-based metrics are used instead."
+    )
 
     st.markdown(f"""
     <div class="cv-eval-panel">
@@ -1484,9 +1546,10 @@ def render_rag_evaluation(metrics):
             <div class="cv-eval-metric"><div class="cv-eval-value">{pct('context_relevance')}</div><div class="cv-eval-label">Context Relevance</div></div>
             <div class="cv-eval-metric"><div class="cv-eval-value">{pct('retrieval_confidence')}</div><div class="cv-eval-label">Retrieval Confidence</div></div>
             <div class="cv-eval-metric"><div class="cv-eval-value">{pct('overall_score')}</div><div class="cv-eval-label">Overall RAG Score</div></div>
+            <div class="cv-eval-metric"><div class="cv-eval-value">{gt_value}</div><div class="cv-eval-label">Ground Truth Similarity</div></div>
             <div class="cv-eval-metric"><div class="cv-eval-value">{metrics.get('response_time_ms', 0.0):.0f} ms</div><div class="cv-eval-label">Response Time</div></div>
         </div>
-        <div class="cv-eval-note">Live semantic/grounding indicators based on the current question, generated answer, and retrieved movie context. Overall RAG Score is a dashboard heuristic, not classification accuracy/F1 or a human gold-label benchmark.</div>
+        <div class="cv-eval-note">{gt_note}</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -2096,6 +2159,11 @@ if _view == 4:
         """, unsafe_allow_html=True)
 
         render_rag_evaluation(metrics)
+
+        if metrics.get("ground_truth_available"):
+            with st.expander("HUMAN GROUND-TRUTH REFERENCE — benchmark answer"):
+                st.markdown(f"**Reference answer:** {metrics.get('ground_truth')}")
+                st.caption("This reference is used only for the fixed benchmark questions. Other user questions are evaluated without inventing a ground truth.")
 
         if not docs.empty:
             with st.expander(f"GROUNDED IN {len(docs)} RETRIEVED RECORD(S) — view evidence"):
