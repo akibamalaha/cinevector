@@ -220,34 +220,44 @@ html, body, [class*="css"] {{
 }}
 
 .stTabs [data-baseweb="tab-list"] {{
-    gap: 0.6rem;
-    border-bottom: none;
-    padding: 0.4rem 0 1.2rem 0;
-    flex-wrap: wrap;
+    gap: 0.6rem !important;
+    padding: 0.4rem 0 1.2rem 0 !important;
+    flex-wrap: wrap !important;
 }}
-.stTabs [data-baseweb="tab"] {{
-    font-family: 'Bebas Neue', sans-serif;
-    font-size: 0.92rem;
-    letter-spacing: 0.09em;
-    color: #7a7a7a;
-    background: {NETFLIX_DARK};
-    border: 1px solid #2a2a2a;
-    border-radius: 20px;
-    padding: 0.5rem 1.3rem 0.4rem 1.3rem;
-    transition: all 0.15s ease;
-}}
-.stTabs [data-baseweb="tab"]:hover {{
-    color: {NETFLIX_WHITE};
-    border-color: #4a4a4a;
+.stTabs [data-baseweb="tab-border"] {{
+    background: transparent !important;
+    height: 0 !important;
 }}
 .stTabs [data-baseweb="tab-highlight"] {{
     background: transparent !important;
+    height: 0 !important;
 }}
-.stTabs [aria-selected="true"] {{
+.stTabs button[data-baseweb="tab"] {{
+    font-family: 'Bebas Neue', sans-serif !important;
+    font-size: 0.92rem !important;
+    letter-spacing: 0.09em !important;
+    color: #7a7a7a !important;
+    background: {NETFLIX_DARK} !important;
+    border: 1px solid #2a2a2a !important;
+    border-radius: 20px !important;
+    padding: 0.5rem 1.3rem 0.4rem 1.3rem !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+    transition: all 0.15s ease !important;
+}}
+.stTabs button[data-baseweb="tab"] p {{
+    font-family: 'Bebas Neue', sans-serif !important;
+    letter-spacing: 0.09em !important;
+}}
+.stTabs button[data-baseweb="tab"]:hover {{
+    color: {NETFLIX_WHITE} !important;
+    border-color: #4a4a4a !important;
+}}
+.stTabs button[aria-selected="true"] {{
     color: {NETFLIX_WHITE} !important;
     background: linear-gradient(135deg, #7a0710, {NETFLIX_RED}) !important;
     border-color: {NETFLIX_RED} !important;
-    box-shadow: 0 0 18px rgba(229,9,20,0.45);
+    box-shadow: 0 0 18px rgba(229,9,20,0.45) !important;
 }}
 
 .stButton>button {{
