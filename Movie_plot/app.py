@@ -569,6 +569,44 @@ def fetch_tmdb_poster_url(title, year, api_key):
     return None
 
 
+def _omdb_key():
+    key = st.session_state.get("omdb_api_key", "").strip()
+    if key:
+        return key
+    try:
+        return st.secrets.get("OMDB_API_KEY", "")
+    except Exception:
+        return ""
+
+
+@st.cache_data(show_spinner=False)
+def fetch_omdb_poster_url(title, year, api_key):
+    if not api_key:
+        return None
+    try:
+        clean_title = re.sub(r"\s*\(\d{4}\)$", "", str(title))
+        resp = requests.get(
+            "https://www.omdbapi.com/",
+            params={"apikey": api_key, "t": clean_title, "y": year, "type": "movie"},
+            timeout=6,
+        )
+        data = resp.json()
+        if data.get("Response") == "False" and year:
+            # retry without the year in case OMDb's year match is too strict
+            resp = requests.get(
+                "https://www.omdbapi.com/",
+                params={"apikey": api_key, "t": clean_title, "type": "movie"},
+                timeout=6,
+            )
+            data = resp.json()
+        poster = data.get("Poster")
+        if poster and poster != "N/A":
+            return poster
+    except Exception:
+        pass
+    return None
+
+
 def _poster_seed(title, year):
     """Deterministic seed so the same movie always gets the same stock photo."""
     raw = f"{title}-{year}"
@@ -586,12 +624,18 @@ def get_real_photo_url(title, year, size=(300, 450)):
 
 
 def get_poster(title, year, genre):
-    """Primary image source, in priority order: TMDB real poster (if an API
-    key is set) → free no-signup stock photo → nothing (caller should use
-    get_poster_fallback for a guaranteed-available generated card)."""
-    key = _tmdb_key()
-    if key:
-        url = fetch_tmdb_poster_url(title, year, key)
+    """Primary image source, in priority order: TMDB real poster → OMDb real
+    poster (either, if a key is set) → free no-signup generic stock photo →
+    nothing (caller should use get_poster_fallback for a guaranteed-available
+    generated card)."""
+    tmdb = _tmdb_key()
+    if tmdb:
+        url = fetch_tmdb_poster_url(title, year, tmdb)
+        if url:
+            return url
+    omdb = _omdb_key()
+    if omdb:
+        url = fetch_omdb_poster_url(title, year, omdb)
         if url:
             return url
     return get_real_photo_url(title, year)
@@ -1070,12 +1114,20 @@ st.markdown(f"""
 
 with st.expander("Use official posters (optional)"):
     st.caption(
-        "By default, cards show a real stock photo (no signup needed) with a generated title card "
-        "as a safety net if it can't load — never actual movie poster art, so there's no copyright risk. "
-        "To show the real official poster for each movie instead, get a free API key at "
-        "themoviedb.org/settings/api and paste it here (kept only for this session, never saved to disk)."
+        "By default, cards show a real stock photo (no signup needed, but not movie-related) with a "
+        "generated title card as a safety net if it can't load. To show each movie's actual official "
+        "poster instead, add a free key from **either** service below (TMDB is tried first if both are set)."
     )
-    st.text_input("TMDB API key", key="tmdb_api_key", type="password", label_visibility="collapsed")
+    oc1, oc2 = st.columns(2)
+    with oc1:
+        st.markdown("**OMDb** — easiest: just an email address")
+        st.caption("Free key at [omdbapi.com/apikey.aspx](https://www.omdbapi.com/apikey.aspx) — emailed to you, no address/billing form.")
+        st.text_input("OMDb API key", key="omdb_api_key", type="password", label_visibility="collapsed")
+    with oc2:
+        st.markdown("**TMDB** — larger catalog, more detail")
+        st.caption("Free key at [themoviedb.org/settings/api](https://www.themoviedb.org/settings/api) — requires filling out a short application form.")
+        st.text_input("TMDB API key", key="tmdb_api_key", type="password", label_visibility="collapsed")
+    st.caption("Keys are kept only for this session and never saved to disk. On a deployed app, set them permanently via Streamlit Cloud → Settings → Secrets as `OMDB_API_KEY` / `TMDB_API_KEY`.")
 
 
 @st.dialog("Movie Details", width="large")
