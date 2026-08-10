@@ -353,6 +353,110 @@ input, textarea {{
     border: 1px solid rgba(229, 9, 20, 0.28);
     flex: 0 0 auto;
 }}
+
+/* ── Filmstrip timeline (signature Explore visual) ─────────────────── */
+.cv-filmstrip {{
+    background: {NETFLIX_DARK};
+    border: 1px solid #2a2a2a;
+    border-radius: 4px;
+    padding: 0.9rem 0 0.4rem 0;
+    margin-top: 0.6rem;
+    position: relative;
+}}
+.cv-sprockets {{
+    display: flex;
+    justify-content: space-evenly;
+    padding: 0 0.6rem;
+}}
+.cv-sprockets span {{
+    width: 9px;
+    height: 9px;
+    border-radius: 2px;
+    background: {NETFLIX_BLACK};
+    border: 1px solid #333;
+    display: inline-block;
+}}
+
+/* ── Ranked leaderboard rows (genre breakdown) ─────────────────────── */
+.cv-rank-row {{
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    padding: 0.42rem 0;
+    border-bottom: 1px solid #232323;
+}}
+.cv-rank-num {{
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1rem;
+    color: #4a4a4a;
+    width: 1.6rem;
+    flex: 0 0 auto;
+}}
+.cv-rank-label {{
+    font-size: 0.82rem;
+    color: {NETFLIX_WHITE};
+    width: 13rem;
+    flex: 0 0 auto;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}}
+.cv-rank-track {{
+    flex: 1 1 auto;
+    background: #1c1c1c;
+    border-radius: 3px;
+    height: 9px;
+    overflow: hidden;
+}}
+.cv-rank-fill {{
+    height: 100%;
+    border-radius: 3px;
+    background: linear-gradient(90deg, #5c0509, {NETFLIX_RED});
+}}
+.cv-rank-count {{
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1rem;
+    color: {NETFLIX_GRAY};
+    width: 1.8rem;
+    flex: 0 0 auto;
+    text-align: right;
+}}
+
+/* ── Word-count stat card ───────────────────────────────────────────── */
+.cv-wc-card {{
+    background: {NETFLIX_DARK};
+    border: 1px solid #2a2a2a;
+    border-radius: 6px;
+    padding: 1.1rem 1.2rem;
+    height: 100%;
+}}
+.cv-wc-big {{
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 2.6rem;
+    color: {NETFLIX_WHITE};
+    line-height: 1;
+}}
+.cv-wc-range {{
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    color: {NETFLIX_GRAY};
+    text-transform: uppercase;
+    margin-top: 0.2rem;
+}}
+.cv-wc-bars {{
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 46px;
+    margin-top: 1rem;
+}}
+.cv-wc-bars div {{
+    flex: 1 1 auto;
+    background: {NETFLIX_RED};
+    opacity: 0.85;
+    border-radius: 2px 2px 0 0;
+    min-height: 3px;
+}}
 </style>
 """
 
@@ -1127,7 +1231,48 @@ with st.expander("Use official posters (optional)"):
         st.markdown("**TMDB** — larger catalog, more detail")
         st.caption("Free key at [themoviedb.org/settings/api](https://www.themoviedb.org/settings/api) — requires filling out a short application form.")
         st.text_input("TMDB API key", key="tmdb_api_key", type="password", label_visibility="collapsed")
-    st.caption("Keys are kept only for this session and never saved to disk. On a deployed app, set them permanently via Streamlit Cloud → Settings → Secrets as `OMDB_API_KEY` / `TMDB_API_KEY`.")
+    st.caption(
+        "To make a key permanent (no retyping, works for every visitor), don't use the boxes above on a "
+        "deployed app — go to **share.streamlit.io → your app → ⋮ → Settings → Secrets** and paste:\n\n"
+        "```\nOMDB_API_KEY = \"your-actual-key-here\"\n```\n\n"
+        "then **Reboot app**. The boxes above are only for quick local testing."
+    )
+
+    st.markdown('<div class="cv-divider" style="margin:1rem 0;"></div>', unsafe_allow_html=True)
+    st.markdown("**Diagnose why posters aren't showing**")
+    diag_title = st.text_input("Test title", value="Iron Man", key="diag_title")
+    if st.button("Run diagnostic", key="diag_run"):
+        omdb_key = _omdb_key()
+        tmdb_key = _tmdb_key()
+        st.write(f"OMDb key detected: `{'yes — ' + omdb_key[:3] + '…' + omdb_key[-2:] if omdb_key else 'NO KEY FOUND'}`")
+        st.write(f"TMDB key detected: `{'yes — ' + tmdb_key[:3] + '…' + tmdb_key[-2:] if tmdb_key else 'NO KEY FOUND'}`")
+        if not omdb_key and not tmdb_key:
+            st.error(
+                "Neither key was found in session_state OR st.secrets. That means the secret either "
+                "isn't saved on Streamlit Cloud, is misspelled, or the app hasn't rebooted since you saved it."
+            )
+        if omdb_key:
+            try:
+                raw = requests.get(
+                    "https://www.omdbapi.com/",
+                    params={"apikey": omdb_key, "t": diag_title, "type": "movie"},
+                    timeout=6,
+                )
+                st.write(f"OMDb HTTP status: `{raw.status_code}`")
+                st.json(raw.json())
+            except Exception as e:
+                st.error(f"OMDb request raised an exception: {e}")
+        if tmdb_key:
+            try:
+                raw = requests.get(
+                    "https://api.themoviedb.org/3/search/movie",
+                    params={"api_key": tmdb_key, "query": diag_title},
+                    timeout=6,
+                )
+                st.write(f"TMDB HTTP status: `{raw.status_code}`")
+                st.json(raw.json())
+            except Exception as e:
+                st.error(f"TMDB request raised an exception: {e}")
 
 
 @st.dialog("Movie Details", width="large")
@@ -1293,38 +1438,68 @@ with tabs[0]:
     st.markdown('<div class="cv-section-tag">DATASET</div>', unsafe_allow_html=True)
     st.markdown('<div class="cv-section-title">Explore the Collection</div>', unsafe_allow_html=True)
 
-    c1, c2 = st.columns([1, 1])
-    with c1:
-        fig = px.histogram(
-            movies, x="genre", color="genre", title="Genre Distribution",
-            color_discrete_sequence=px.colors.sequential.Reds_r,
-        )
-        fig.update_layout(
-            plot_bgcolor=NETFLIX_BLACK, paper_bgcolor=NETFLIX_BLACK, font_color=NETFLIX_WHITE,
-            showlegend=False, title_font_size=15, margin=dict(t=50, b=10),
-        )
-        st.plotly_chart(fig, use_container_width=True)
-    with c2:
-        fig2 = px.histogram(
-            movies, x="year", nbins=15, title="Movies by Year",
-            color_discrete_sequence=[NETFLIX_RED],
-        )
-        fig2.update_layout(
-            plot_bgcolor=NETFLIX_BLACK, paper_bgcolor=NETFLIX_BLACK, font_color=NETFLIX_WHITE,
-            title_font_size=15, margin=dict(t=50, b=10),
-        )
-        st.plotly_chart(fig2, use_container_width=True)
+    # ── Signature visual: release timeline styled as a film strip ──────
+    st.markdown('<div class="cv-mono-label">RELEASE TIMELINE</div>', unsafe_allow_html=True)
+    year_counts = movies.groupby("year").size().reindex(
+        range(int(movies["year"].min()), int(movies["year"].max()) + 1), fill_value=0
+    )
+    st.markdown('<div class="cv-filmstrip"><div class="cv-sprockets">'
+                + "".join(["<span></span>"] * 26) + "</div>", unsafe_allow_html=True)
+    timeline = go.Figure(go.Bar(
+        x=year_counts.index.astype(str), y=year_counts.values,
+        marker_color=NETFLIX_RED, marker_line_width=0,
+        text=[str(v) if v else "" for v in year_counts.values],
+        textposition="outside", textfont=dict(color=NETFLIX_WHITE, size=11),
+        hovertemplate="%{x}: %{y} movie(s)<extra></extra>",
+    ))
+    timeline.update_layout(
+        plot_bgcolor=NETFLIX_DARK, paper_bgcolor=NETFLIX_DARK, font_color=NETFLIX_WHITE,
+        height=180, margin=dict(t=25, b=30, l=10, r=10),
+        xaxis=dict(showgrid=False, tickfont=dict(size=10, color=NETFLIX_GRAY)),
+        yaxis=dict(visible=False),
+        bargap=0.35,
+    )
+    st.plotly_chart(timeline, use_container_width=True, config={"displayModeBar": False})
+    st.markdown('<div class="cv-sprockets">' + "".join(["<span></span>"] * 26)
+                + "</div></div>", unsafe_allow_html=True)
 
-    plot_lengths = movies["plot"].str.split().apply(len)
-    fig3 = px.histogram(
-        x=plot_lengths, nbins=12, title="Plot Length Distribution (words)",
-        color_discrete_sequence=[NETFLIX_RED],
-    )
-    fig3.update_layout(
-        plot_bgcolor=NETFLIX_BLACK, paper_bgcolor=NETFLIX_BLACK, font_color=NETFLIX_WHITE,
-        title_font_size=15, margin=dict(t=50, b=10), height=280,
-    )
-    st.plotly_chart(fig3, use_container_width=True)
+    st.markdown("<div style='height:1.4rem'></div>", unsafe_allow_html=True)
+
+    c1, c2 = st.columns([3, 2])
+    with c1:
+        st.markdown('<div class="cv-mono-label">GENRE LEADERBOARD</div>', unsafe_allow_html=True)
+        genre_counts = movies["genre"].value_counts()
+        max_count = int(genre_counts.max())
+        rows_html = ""
+        for i, (genre, count) in enumerate(genre_counts.items(), start=1):
+            pct = (count / max_count) * 100
+            rows_html += f"""
+            <div class="cv-rank-row">
+                <div class="cv-rank-num">{i:02d}</div>
+                <div class="cv-rank-label">{genre}</div>
+                <div class="cv-rank-track"><div class="cv-rank-fill" style="width:{pct}%;"></div></div>
+                <div class="cv-rank-count">{count}</div>
+            </div>
+            """
+        st.markdown(f'<div class="cv-filmstrip" style="padding:0.8rem 1rem;">{rows_html}</div>', unsafe_allow_html=True)
+
+    with c2:
+        st.markdown('<div class="cv-mono-label">SYNOPSIS LENGTH</div>', unsafe_allow_html=True)
+        plot_lengths = movies["plot"].str.split().apply(len)
+        counts, edges = np.histogram(plot_lengths, bins=10)
+        max_c = max(counts.max(), 1)
+        bars_html = "".join(
+            f'<div style="height:{max(6, int(c / max_c * 100))}%;" title="{c} movie(s)"></div>'
+            for c in counts
+        )
+        st.markdown(f"""
+        <div class="cv-wc-card">
+            <div class="cv-wc-big">{int(plot_lengths.mean())}</div>
+            <div class="cv-wc-range">AVG WORDS PER SYNOPSIS</div>
+            <div class="cv-wc-bars">{bars_html}</div>
+            <div class="cv-wc-range" style="margin-top:0.4rem;">RANGE {plot_lengths.min()}–{plot_lengths.max()} WORDS</div>
+        </div>
+        """, unsafe_allow_html=True)
 
     st.markdown('<div class="cv-mono-label" style="margin-top:1.5rem;">BROWSE THE CATALOG</div>', unsafe_allow_html=True)
     poster_cols = st.columns(6)
