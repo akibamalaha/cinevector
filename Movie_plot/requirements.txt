@@ -1,0 +1,12 @@
+streamlit>=1.32
+pandas
+numpy
+openpyxl
+plotly
+scikit-learn
+sentence-transformers
+faiss-cpu
+transformers
+torch
+Pillow
+requests
