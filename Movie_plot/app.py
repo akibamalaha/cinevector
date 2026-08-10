@@ -71,7 +71,7 @@ html, body, [class*="css"] {{
 #MainMenu, footer {{visibility: hidden;}}
 header {{display: none !important;}}
 [data-testid="stHeader"] {{display: none !important; height: 0 !important;}}
-.block-container {{padding-top: 1.2rem !important;}}
+.block-container {{padding-top: 0.4rem !important;}}
 .stApp > header {{display: none !important;}}
 
 /* ── Hero ───────────────────────────────────────────────────────── */
@@ -1335,15 +1335,15 @@ n_genres = movies["genre"].nunique()
 year_min, year_max = int(movies["year"].min()), int(movies["year"].max())
 
 st.markdown(f"""
-<div style="text-align:center; padding: 1.6rem 0 0.4rem;">
-    <div class="cv-logo" style="font-size:2.6rem;">CINEVECTOR</div>
-    <div class="cv-tagline" style="font-size:0.72rem;">Movie Intelligence Engine</div>
-    <div class="cv-chip-row" style="margin-top:1rem; gap:1.8rem;">
-        <div class="cv-chip"><div class="cv-chip-value" style="font-size:1.4rem;">{len(movies)}</div><div class="cv-chip-label">Movies</div></div>
-        <div class="cv-chip"><div class="cv-chip-value" style="font-size:1.4rem;">{n_genres}</div><div class="cv-chip-label">Genres</div></div>
-        <div class="cv-chip"><div class="cv-chip-value" style="font-size:1.4rem;">{year_min}–{year_max}</div><div class="cv-chip-label">Years</div></div>
-        <div class="cv-chip"><div class="cv-chip-value" style="font-size:1.4rem;">{dimension}D</div><div class="cv-chip-label">Embeddings</div></div>
-        <div class="cv-chip"><div class="cv-chip-value" style="font-size:1.4rem;">5</div><div class="cv-chip-label">FAISS Indexes</div></div>
+<div style="text-align:center; padding: 0.3rem 0 0.1rem;">
+    <div class="cv-logo" style="font-size:1.7rem; letter-spacing:0.06em;">CINEVECTOR</div>
+    <div class="cv-tagline" style="font-size:0.6rem; margin-top:0.15rem;">Movie Intelligence Engine</div>
+    <div class="cv-chip-row" style="margin-top:0.5rem; gap:1.4rem;">
+        <div class="cv-chip"><div class="cv-chip-value" style="font-size:1rem;">{len(movies)}</div><div class="cv-chip-label" style="font-size:0.6rem;">Movies</div></div>
+        <div class="cv-chip"><div class="cv-chip-value" style="font-size:1rem;">{n_genres}</div><div class="cv-chip-label" style="font-size:0.6rem;">Genres</div></div>
+        <div class="cv-chip"><div class="cv-chip-value" style="font-size:1rem;">{year_min}–{year_max}</div><div class="cv-chip-label" style="font-size:0.6rem;">Years</div></div>
+        <div class="cv-chip"><div class="cv-chip-value" style="font-size:1rem;">{dimension}D</div><div class="cv-chip-label" style="font-size:0.6rem;">Embeddings</div></div>
+        <div class="cv-chip"><div class="cv-chip-value" style="font-size:1rem;">5</div><div class="cv-chip-label" style="font-size:0.6rem;">FAISS Indexes</div></div>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -1397,9 +1397,9 @@ if HAS_MOVIES:
         synopsis_preview = synopsis_preview[:260].rsplit(" ", 1)[0] + "..."
 
     st.markdown(f"""
-    <div style="position:relative; border-radius:10px; overflow:hidden; height:340px;
+    <div style="position:relative; border-radius:10px; overflow:hidden; height:300px;
                 background-image:url('{backdrop}'); background-size:cover; background-position:center;
-                margin: 1rem 0 1.4rem; display:flex; align-items:flex-end;">
+                margin: 0.4rem 0 1rem; display:flex; align-items:flex-end;">
         <div style="padding:2rem; max-width:600px;">
             <div style="font-size:0.7rem; letter-spacing:0.2em; color:#ff6b6f; text-transform:uppercase; margin-bottom:0.5rem;">
                 Featured &bull; {hero_row.get('genre','')}
