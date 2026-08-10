@@ -1471,26 +1471,37 @@ with tabs[0]:
     st.markdown('<div class="cv-section-tag">DATASET</div>', unsafe_allow_html=True)
     st.markdown('<div class="cv-section-title">Explore the Collection</div>', unsafe_allow_html=True)
 
-    # ── Signature visual: release timeline styled as a film strip ──────
+    # ── Signature visual: release timeline, one marker per movie ───────
     st.markdown('<div class="cv-mono-label">RELEASE TIMELINE</div>', unsafe_allow_html=True)
-    year_counts = movies.groupby("year").size().reindex(
-        range(int(movies["year"].min()), int(movies["year"].max()) + 1), fill_value=0
+    movies_sorted = movies.sort_values("year", kind="stable").reset_index(drop=True)
+    n_movies = len(movies_sorted)
+    # graded red per movie — darkest (Genre Distribution's tallest-bar shade) for the
+    # oldest release, fading to the lightest salmon for the newest, same Reds ramp
+    red_shades = px.colors.sample_colorscale(
+        px.colors.sequential.Reds[::-1], [i / max(n_movies - 1, 1) for i in range(n_movies)]
     )
     st.markdown('<div class="cv-filmstrip"><div class="cv-sprockets">'
                 + "".join(["<span></span>"] * 26) + "</div>", unsafe_allow_html=True)
-    timeline = go.Figure(go.Bar(
-        x=year_counts.index.astype(str), y=year_counts.values,
-        marker_color=NETFLIX_RED, marker_line_width=0,
-        text=[str(v) if v else "" for v in year_counts.values],
-        textposition="outside", textfont=dict(color=NETFLIX_WHITE, size=11),
-        hovertemplate="%{x}: %{y} movie(s)<extra></extra>",
-    ))
+    timeline = go.Figure()
+    for i, row in movies_sorted.iterrows():
+        timeline.add_trace(go.Scatter(
+            x=[row["year"]], y=[i],
+            mode="markers+text",
+            marker=dict(size=13, color=red_shades[i], line=dict(width=1, color=NETFLIX_DARK)),
+            text=[f"  {row['movie_title']}"], textposition="middle right",
+            textfont=dict(color=NETFLIX_WHITE, size=11),
+            hovertemplate=f"{row['movie_title']} — {row['year']}<extra></extra>",
+            showlegend=False,
+        ))
+        timeline.add_shape(
+            type="line", x0=movies_sorted["year"].min(), x1=row["year"], y0=i, y1=i,
+            line=dict(color=red_shades[i], width=1.5),
+        )
     timeline.update_layout(
         plot_bgcolor=NETFLIX_DARK, paper_bgcolor=NETFLIX_DARK, font_color=NETFLIX_WHITE,
-        height=180, margin=dict(t=25, b=30, l=10, r=10),
-        xaxis=dict(showgrid=False, tickfont=dict(size=10, color=NETFLIX_GRAY)),
-        yaxis=dict(visible=False),
-        bargap=0.35,
+        height=max(220, n_movies * 26), margin=dict(t=15, b=30, l=10, r=160),
+        xaxis=dict(showgrid=False, tickfont=dict(size=10, color=NETFLIX_GRAY), title="Release Year"),
+        yaxis=dict(visible=False, autorange="reversed"),
     )
     st.plotly_chart(timeline, use_container_width=True, config={"displayModeBar": False})
     st.markdown('<div class="cv-sprockets">' + "".join(["<span></span>"] * 26)
@@ -1501,14 +1512,18 @@ with tabs[0]:
     st.markdown('<div class="cv-mono-label">COLLECTION BREAKDOWN</div>', unsafe_allow_html=True)
     genre_counts = movies["genre"].value_counts()
     max_count = int(genre_counts.max())
+    n_genre_rows = len(genre_counts)
+    genre_shades = px.colors.sample_colorscale(
+        px.colors.sequential.Reds[::-1], [i / max(n_genre_rows - 1, 1) for i in range(n_genre_rows)]
+    )
     rows_html = ""
-    for i, (genre, count) in enumerate(genre_counts.items(), start=1):
+    for i, (genre, count) in enumerate(genre_counts.items()):
         pct = (count / max_count) * 100
         rows_html += f"""
         <div class="cv-rank-row">
-            <div class="cv-rank-num">{i:02d}</div>
+            <div class="cv-rank-num">{i+1:02d}</div>
             <div class="cv-rank-label">{genre}</div>
-            <div class="cv-rank-track"><div class="cv-rank-fill" style="width:{pct}%;"></div></div>
+            <div class="cv-rank-track"><div class="cv-rank-fill" style="width:{pct}%; background:{genre_shades[i]};"></div></div>
             <div class="cv-rank-count">{count}</div>
         </div>
         """
